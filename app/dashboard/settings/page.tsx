@@ -12,8 +12,14 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Youtube, Instagram, Shield, User, Bell } from "lucide-react";
 import DashboardHeader from "@/app/dashboard/dashboard-header";
+import { getServerSession } from "next-auth";
+import { redirect } from "next/navigation";
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  const session = await getServerSession();
+  if (!session) {
+    return redirect("../../api/auth/signin");
+  }
   return (
     <div className="flex min-h-screen flex-col">
       <DashboardHeader />

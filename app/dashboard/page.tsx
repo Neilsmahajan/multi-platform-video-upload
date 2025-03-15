@@ -11,8 +11,14 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Plus, Upload, Youtube, Instagram, Clock } from "lucide-react";
 import DashboardHeader from "@/app/dashboard/dashboard-header";
+import { getServerSession } from "next-auth";
+import { redirect } from "next/navigation";
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const session = await getServerSession();
+  if (!session) {
+    return redirect("../api/auth/signin");
+  }
   return (
     <div className="flex min-h-screen flex-col">
       <DashboardHeader />
