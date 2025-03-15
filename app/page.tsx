@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { ArrowRight } from "lucide-react";
+import GetStartedButton from "./GetStartedButton";
 
 export default function Home() {
   return (
@@ -20,11 +20,7 @@ export default function Home() {
                   </p>
                 </div>
                 <div className="flex flex-col gap-2 min-[400px]:flex-row">
-                  <Link href="/login">
-                    <Button size="lg" className="gap-1">
-                      Get Started <ArrowRight className="h-4 w-4" />
-                    </Button>
-                  </Link>
+                  <GetStartedButton />
                   <Link href="/about">
                     <Button size="lg" variant="outline">
                       Learn More
