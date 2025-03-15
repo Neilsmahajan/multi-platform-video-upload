@@ -72,28 +72,6 @@ export default function SettingsPage() {
                 <Button>Save Changes</Button>
               </CardContent>
             </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Change Password</CardTitle>
-                <CardDescription>Update your password</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="current-password">Current password</Label>
-                  <Input id="current-password" type="password" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="new-password">New password</Label>
-                  <Input id="new-password" type="password" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="confirm-password">Confirm password</Label>
-                  <Input id="confirm-password" type="password" />
-                </div>
-                <Button>Update Password</Button>
-              </CardContent>
-            </Card>
           </TabsContent>
 
           <TabsContent value="platforms" className="space-y-6">
