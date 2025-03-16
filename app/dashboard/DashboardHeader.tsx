@@ -11,14 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import {
-  Bell,
-  Menu,
-  Upload,
-  LayoutDashboard,
-  Settings,
-  LogOut,
-} from "lucide-react";
+import { Menu, Upload, LayoutDashboard, Settings, LogOut } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
 import { signOut, useSession } from "next-auth/react";
@@ -69,7 +62,7 @@ export default function DashboardHeader() {
           </Sheet>
           <Link href="/" className="flex items-center gap-2 font-semibold">
             <span className="hidden md:inline-block">
-              Multi-Platform Video Upload
+              Multiplatform Video Upload
             </span>
             <span className="md:hidden">MPVU</span>
           </Link>
@@ -95,9 +88,6 @@ export default function DashboardHeader() {
           </nav>
         </div>
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" aria-label="Notifications">
-            <Bell className="h-5 w-5" />
-          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="relative h-8 w-8 rounded-full">
@@ -121,15 +111,6 @@ export default function DashboardHeader() {
                   </p>
                 </div>
               </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem>
-                <LayoutDashboard className="mr-2 h-4 w-4" />
-                <span>Dashboard</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Settings className="mr-2 h-4 w-4" />
-                <span>Settings</span>
-              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => signOut({ callbackUrl: "/" })}>
                 <LogOut className="mr-2 h-4 w-4" />
