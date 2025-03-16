@@ -119,7 +119,7 @@ export default function Home() {
           <nav className="flex gap-4 sm:gap-6">
             <Link
               className="text-sm font-medium hover:underline underline-offset-4"
-              href="#"
+              href="/terms"
             >
               Terms of Service
             </Link>
