@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Youtube, Instagram, Shield, User, Bell } from "lucide-react";
+import { Youtube, Instagram, Shield, Bell } from "lucide-react";
 import DashboardHeader from "@/app/dashboard/DashboardHeader";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
@@ -31,12 +31,8 @@ export default async function SettingsPage() {
           </p>
         </div>
 
-        <Tabs defaultValue="account" className="space-y-6">
+        <Tabs defaultValue="platforms" className="space-y-6">
           <TabsList>
-            <TabsTrigger value="account" className="flex items-center gap-2">
-              <User className="h-4 w-4" />
-              Account
-            </TabsTrigger>
             <TabsTrigger value="platforms" className="flex items-center gap-2">
               <Shield className="h-4 w-4" />
               Platforms
@@ -49,36 +45,6 @@ export default async function SettingsPage() {
               Notifications
             </TabsTrigger>
           </TabsList>
-
-          <TabsContent value="account" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Profile Information</CardTitle>
-                <CardDescription>Update your account details</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="first-name">First name</Label>
-                    <Input id="first-name" defaultValue="John" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="last-name">Last name</Label>
-                    <Input id="last-name" defaultValue="Doe" />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    defaultValue="john.doe@example.com"
-                  />
-                </div>
-                <Button>Save Changes</Button>
-              </CardContent>
-            </Card>
-          </TabsContent>
 
           <TabsContent value="platforms" className="space-y-6">
             <Card>
