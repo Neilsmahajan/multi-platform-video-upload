@@ -17,6 +17,9 @@ export const metadata: Metadata = {
   title: "Multiplatform Video Upload",
   description:
     "Connect your YouTube, Instagram, and TikTok accounts to upload and manage your short- form videos from one place.",
+  icons: {
+    icon: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({
