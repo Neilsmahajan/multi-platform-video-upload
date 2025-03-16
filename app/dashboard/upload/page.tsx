@@ -1,4 +1,4 @@
-import DashboardHeader from "@/app/dashboard/dashboard-header";
+import DashboardHeader from "@/app/dashboard/DashboardHeader";
 import UploadForm from "@/app/dashboard/upload/UploadForm";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";

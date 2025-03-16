@@ -21,10 +21,11 @@ import {
 } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useState } from "react";
-import { signOut } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 
 export default function DashboardHeader() {
   const [open, setOpen] = useState(false);
+  const { data: session } = useSession();
 
   return (
     <header className="sticky top-0 z-10 w-full border-b bg-background">
@@ -101,7 +102,10 @@ export default function DashboardHeader() {
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                 <Avatar className="h-8 w-8">
-                  <AvatarImage src="/placeholder-user.jpg" alt="@user" />
+                  <AvatarImage
+                    src={session?.user?.image || "/placeholder-user.jpg"}
+                    alt={session?.user?.name || "@user"}
+                  />
                   <AvatarFallback>U</AvatarFallback>
                 </Avatar>
               </Button>
@@ -109,9 +113,11 @@ export default function DashboardHeader() {
             <DropdownMenuContent className="w-56" align="end" forceMount>
               <DropdownMenuLabel className="font-normal">
                 <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium leading-none">username</p>
+                  <p className="text-sm font-medium leading-none">
+                    {session?.user?.name}
+                  </p>
                   <p className="text-xs leading-none text-muted-foreground">
-                    user@example.com
+                    {session?.user?.email}
                   </p>
                 </div>
               </DropdownMenuLabel>

@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Youtube, Instagram, Shield, User, Bell } from "lucide-react";
-import DashboardHeader from "@/app/dashboard/dashboard-header";
+import DashboardHeader from "@/app/dashboard/DashboardHeader";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 

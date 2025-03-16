@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Upload, Youtube, Instagram, Clock } from "lucide-react";
-import DashboardHeader from "@/app/dashboard/dashboard-header";
+import DashboardHeader from "@/app/dashboard/DashboardHeader";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 
