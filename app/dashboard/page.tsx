@@ -92,8 +92,8 @@ export default async function DashboardPage() {
               </div>
             </CardContent>
             <CardFooter>
-              <Button variant="outline" className="w-full">
-                Manage Connections
+              <Button asChild variant="outline" className="w-full">
+                <Link href="/dashboard/settings">Manage Connections</Link>
               </Button>
             </CardFooter>
           </Card>
