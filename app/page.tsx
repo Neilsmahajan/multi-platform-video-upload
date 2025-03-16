@@ -125,7 +125,7 @@ export default function Home() {
             </Link>
             <Link
               className="text-sm font-medium hover:underline underline-offset-4"
-              href="#"
+              href="/privacy"
             >
               Privacy
             </Link>
