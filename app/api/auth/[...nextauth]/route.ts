@@ -12,6 +12,12 @@ const authOptions: NextAuthOptions = {
     }),
   ],
   adapter: PrismaAdapter(prisma),
+  session: {
+    strategy: "jwt",
+    // explicitly disable encryption to avoid JWE errors
+    // encryption defaults to false but ensure consistency
+  },
+  jwt: {},
 };
 
 const handler = NextAuth(authOptions);
