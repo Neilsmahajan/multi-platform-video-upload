@@ -33,7 +33,8 @@ export async function POST(request: Request) {
     // Create OAuth2 client using YOUTUBE env vars and set refresh token from session
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-    const redirectUri = "http://localhost:3000/api/auth/callback/google";
+    const redirectUri =
+      "https://multi-platform-video-upload.vercel.app/api/auth/callback/google";
     if (!clientId || !clientSecret) {
       return NextResponse.json(
         { error: "Missing YouTube OAuth credentials" },
