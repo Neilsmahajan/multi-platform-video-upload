@@ -34,6 +34,7 @@ export async function POST(request: Request) {
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
     const redirectUri =
+      // "http://localhost:3000/api/auth/callback/google";
       "https://multi-platform-video-upload.vercel.app/api/auth/callback/google";
     if (!clientId || !clientSecret) {
       return NextResponse.json(
