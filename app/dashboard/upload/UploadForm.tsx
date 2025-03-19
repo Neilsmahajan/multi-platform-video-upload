@@ -26,6 +26,9 @@ export default function UploadForm() {
   const [uploadStatus, setUploadStatus] = useState<
     "idle" | "success" | "error"
   >("idle");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [privacyStatus] = useState("private"); // fixed value for now
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -33,15 +36,37 @@ export default function UploadForm() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!file || !title) return;
     setIsUploading(true);
+    setUploadStatus("idle");
+    try {
+      const formData = new FormData();
+      formData.append("videoFile", file);
+      formData.append("title", title);
+      formData.append("description", description);
+      formData.append("privacyStatus", privacyStatus);
 
-    // Simulate upload process
-    setTimeout(() => {
-      setIsUploading(false);
-      setUploadStatus("success");
-    }, 2000);
+      const res = await fetch("/api/youtube/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (res.ok && data.videoId) {
+        setUploadStatus("success");
+        // Optionally clear file and fields
+        setFile(null);
+        setTitle("");
+        setDescription("");
+      } else {
+        setUploadStatus("error");
+      }
+    } catch (err) {
+      console.error("Upload failed", err);
+      setUploadStatus("error");
+    }
+    setIsUploading(false);
   };
 
   return (
@@ -119,7 +144,12 @@ export default function UploadForm() {
 
                 <div className="space-y-2">
                   <Label htmlFor="title">Video Title</Label>
-                  <Input id="title" placeholder="Enter video title" />
+                  <Input
+                    id="title"
+                    placeholder="Enter video title"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                  />
                 </div>
 
                 <div className="space-y-2">
@@ -128,6 +158,8 @@ export default function UploadForm() {
                     id="description"
                     placeholder="Enter a description that works across platforms"
                     className="min-h-[120px]"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
                   />
                   <p className="text-xs text-gray-500">
                     This will be used as the default for all platforms. You can
@@ -192,7 +224,7 @@ export default function UploadForm() {
 
                   <Separator />
 
-                  <div className="space-y-4">
+                  {/* <div className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="youtube-title">Title</Label>
                       <Input
@@ -224,7 +256,7 @@ export default function UploadForm() {
                       <Switch id="youtube-comments" defaultChecked />
                       <Label htmlFor="youtube-comments">Allow comments</Label>
                     </div>
-                  </div>
+                  </div> */}
                 </TabsContent>
 
                 <TabsContent value="instagram" className="space-y-4">
@@ -297,7 +329,7 @@ export default function UploadForm() {
           <Button type="button" variant="outline">
             Save as Draft
           </Button>
-          <Button type="submit" disabled={!file || isUploading}>
+          <Button type="submit" disabled={!file || isUploading || !title}>
             {isUploading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

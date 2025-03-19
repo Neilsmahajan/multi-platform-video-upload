@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     if (!file || !title) {
       return NextResponse.json(
         { error: "Missing required fields" },
-        { status: 400 }
+        { status: 400 },
       );
     }
     // Convert web File to Node.js stream
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     if (!clientId || !clientSecret) {
       return NextResponse.json(
         { error: "Missing YouTube OAuth credentials" },
-        { status: 500 }
+        { status: 500 },
       );
     }
     const oauth2Client = new OAuth2Client(clientId, clientSecret, redirectUri);
