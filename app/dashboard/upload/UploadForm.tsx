@@ -2,6 +2,7 @@
 
 import type React from "react";
 import { useState } from "react";
+import { upload } from "@vercel/blob/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,7 +14,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   AlertCircle,
   CheckCircle2,
-  Upload,
+  Upload as UploadIcon,
   Youtube,
   Instagram,
   Loader2,
@@ -42,15 +43,22 @@ export default function UploadForm() {
     setIsUploading(true);
     setUploadStatus("idle");
     try {
-      const formData = new FormData();
-      formData.append("videoFile", file);
-      formData.append("title", title);
-      formData.append("description", description);
-      formData.append("privacyStatus", privacyStatus);
+      // First, upload directly to Vercel Blob
+      const blobResult = await upload(file.name, file, {
+        access: "public",
+        handleUploadUrl: "/api/video/uploadBlob",
+      });
 
+      // Call YouTube upload endpoint with blob URL and metadata
       const res = await fetch("/api/youtube/upload", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          blobUrl: blobResult.url,
+          title,
+          description,
+          privacyStatus,
+        }),
       });
       const data = await res.json();
       if (res.ok && data.videoId) {
@@ -118,11 +126,11 @@ export default function UploadForm() {
                       </div>
                     ) : (
                       <div className="space-y-4">
-                        <Upload className="mx-auto h-8 w-8 text-gray-400" />
+                        <UploadIcon className="mx-auto h-8 w-8 text-gray-400" />
                         <div>
                           <Label
                             htmlFor="video-upload"
-                            className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 cursor-pointer"
+                            className="inline-flex items-center justify-center rounded-md text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 cursor-pointer"
                           >
                             Select Video
                           </Label>
@@ -337,7 +345,7 @@ export default function UploadForm() {
               </>
             ) : (
               <>
-                <Upload className="mr-2 h-4 w-4" />
+                <UploadIcon className="mr-2 h-4 w-4" />
                 Upload & Publish
               </>
             )}

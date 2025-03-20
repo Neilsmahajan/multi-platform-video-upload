@@ -12,6 +12,7 @@ import { authOptions } from "@/lib/authOptions";
 import { google } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
 import { Readable } from "stream";
+import { ReadableStream as WebReadableStream } from "stream/web";
 
 export async function POST(request: Request) {
   try {
@@ -20,25 +21,32 @@ export async function POST(request: Request) {
     if (!session || !session.user || !session.user.refreshToken) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    // Parse multipart form data
-    const formData = await request.formData();
-    const file = formData.get("videoFile");
-    const title = formData.get("title")?.toString();
-    const description = formData.get("description")?.toString() || "";
-    const privacyStatus =
-      formData.get("privacyStatus")?.toString() || "private";
-
-    if (!file || !title) {
+    // Parse JSON body; expects blobUrl, title, description, privacyStatus
+    const {
+      blobUrl,
+      title,
+      description = "",
+      privacyStatus,
+    } = await request.json();
+    if (!blobUrl || !title) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 },
       );
     }
-    // Convert web File to Node.js stream
-    const buffer = Buffer.from(await (file as Blob).arrayBuffer());
-    const videoStream = Readable.from(buffer);
+    // Fetch the video stream from the blob URL
+    const blobRes = await fetch(blobUrl);
+    if (!blobRes.ok || !blobRes.body) {
+      return NextResponse.json(
+        { error: "Could not retrieve video from blob" },
+        { status: 500 },
+      );
+    }
+    const blobStream = Readable.fromWeb(
+      blobRes.body as WebReadableStream<unknown>,
+    );
 
-    // Create OAuth2 client using YOUTUBE env vars and set refresh token from session
+    // Create OAuth2 client using environment variables
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
     const redirectUri =
@@ -54,28 +62,23 @@ export async function POST(request: Request) {
     oauth2Client.setCredentials({
       refresh_token: session.user.refreshToken as string,
     });
-    // Optionally refresh the access token if needed:
     await oauth2Client.getAccessToken();
 
-    // Upload video to YouTube
+    // Upload video to YouTube using the stream from blob
     const youtube = google.youtube("v3");
     const response = await youtube.videos.insert({
       auth: oauth2Client,
       part: ["snippet", "status"],
       requestBody: {
         snippet: {
-          title: title,
+          title,
           description,
           tags: ["youtube-upload"],
           categoryId: "22",
         },
-        status: {
-          privacyStatus,
-        },
+        status: { privacyStatus },
       },
-      media: {
-        body: videoStream,
-      },
+      media: { body: blobStream },
     });
     return NextResponse.json({ videoId: response.data.id });
   } catch (error) {
