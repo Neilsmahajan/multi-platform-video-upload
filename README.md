@@ -46,3 +46,14 @@ This repository currently contains only the frontend UI. Future commits will inc
 ## Contact
 
 For inquiries or support, please email [neilsmahajan@gmail.com](mailto:neilsmahajan@gmail.com).
+
+## Deployment
+
+The website is deployed at [https://multiplatformvideoupload.com](https://multiplatformvideoupload.com) via Vercel.
+
+## Tech Stack
+
+- Next.js 15, React
+- NextAuth.js for authentication
+- Neon database (PostgreSQL)
+- Prisma ORM
