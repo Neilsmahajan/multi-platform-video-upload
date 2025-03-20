@@ -19,6 +19,8 @@ export async function POST(request: Request) {
     // Validate session
     const session = await getServerSession(authOptions);
     if (!session || !session.user || !session.user.refreshToken) {
+      // Log for debugging missing refreshToken in production
+      console.error("Missing refreshToken in session", session?.user);
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     // Parse JSON body; expects blobUrl, title, description, privacyStatus

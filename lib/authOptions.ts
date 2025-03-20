@@ -14,6 +14,7 @@ export const authOptions: NextAuthOptions = {
             "https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/youtube https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/youtubepartner",
           access_type: "offline",
           prompt: "consent",
+          response_type: "code",
         },
       },
     }),
@@ -26,8 +27,11 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, account }) {
       // When signing in, persist the refreshToken if available.
-      if (account && account.refresh_token) {
-        token.refreshToken = account.refresh_token;
+      if (account) {
+        token.accessToken = account.access_token;
+        if (account.refresh_token) {
+          token.refreshToken = account.refresh_token;
+        }
       }
       return token;
     },
