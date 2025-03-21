@@ -13,6 +13,7 @@ import { google } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
 import { Readable } from "stream";
 import { ReadableStream as WebReadableStream } from "stream/web";
+import { del } from "@vercel/blob";
 
 export async function POST(request: Request) {
   try {
@@ -82,6 +83,14 @@ export async function POST(request: Request) {
       },
       media: { body: blobStream },
     });
+
+    // Delete the blob from Blob storage after successful YouTube upload.
+    try {
+      await del([blobUrl]);
+    } catch (err) {
+      console.error("Error deleting blob:", err);
+    }
+
     return NextResponse.json({ videoId: response.data.id });
   } catch (error) {
     console.error("Error uploading video:", error);
