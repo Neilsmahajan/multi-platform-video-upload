@@ -190,9 +190,11 @@ export default async function DashboardPage() {
                 <CardDescription>Connect to post Reels</CardDescription>
               </CardHeader>
               <CardFooter>
-                <Button className="w-full">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Connect
+                <Button asChild className="w-full">
+                  <Link href="dashboard/settings">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Connect
+                  </Link>
                 </Button>
               </CardFooter>
             </Card>
@@ -216,9 +218,11 @@ export default async function DashboardPage() {
                 <CardDescription>Connect to post videos</CardDescription>
               </CardHeader>
               <CardFooter>
-                <Button className="w-full">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Connect
+                <Button asChild className="w-full">
+                  <Link href="dashboard/settings">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Connect
+                  </Link>
                 </Button>
               </CardFooter>
             </Card>
