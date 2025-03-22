@@ -172,7 +172,9 @@ export default async function DashboardPage() {
                   <Youtube className="h-5 w-5 text-red-600" />
                   YouTube
                 </CardTitle>
-                <CardDescription>Connected as @YourChannel</CardDescription>
+                <CardDescription>
+                  Connected as {session.user.email}
+                </CardDescription>
               </CardHeader>
               <CardFooter>
                 <Button variant="outline" className="w-full">

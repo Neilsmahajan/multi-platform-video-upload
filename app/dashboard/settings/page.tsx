@@ -60,16 +60,16 @@ export default async function SettingsPage() {
               <CardContent className="space-y-4">
                 <div className="p-4 rounded-lg bg-green-50 border border-green-200">
                   <p className="text-green-800 font-medium">
-                    Connected as @YourChannel
+                    Connected as {session.user.email}
                   </p>
                   <p className="text-green-700 text-sm mt-1">
                     Connected on March 10, 2025
                   </p>
                 </div>
-                <div className="flex gap-4">
+                {/* <div className="flex gap-4">
                   <Button variant="outline">Refresh Token</Button>
                   <Button variant="destructive">Disconnect</Button>
-                </div>
+                </div> */}
               </CardContent>
             </Card>
 
