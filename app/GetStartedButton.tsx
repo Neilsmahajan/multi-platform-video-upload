@@ -23,7 +23,7 @@ export default function GetStartedButton() {
   }
 
   return (
-    <Button size="lg" onClick={() => signIn()} className="gap-1">
+    <Button size="lg" onClick={() => signIn("google")} className="gap-1">
       Get Started <ArrowRight className="h-4 w-4" />
     </Button>
   );
