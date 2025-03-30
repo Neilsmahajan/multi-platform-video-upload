@@ -12,11 +12,11 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Youtube, Instagram, Shield, Bell } from "lucide-react";
 import DashboardHeader from "@/app/dashboard/DashboardHeader";
-import { getServerSession } from "next-auth";
+import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 
 export default async function SettingsPage() {
-  const session = await getServerSession();
+  const session = await auth();
   if (!session) {
     return redirect("../../api/auth/signin");
   }

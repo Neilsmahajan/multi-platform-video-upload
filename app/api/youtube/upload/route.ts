@@ -7,8 +7,7 @@ export const config = {
 };
 
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/authOptions";
+import { auth } from "@/auth";
 import { google } from "googleapis";
 import { OAuth2Client } from "google-auth-library";
 import { Readable } from "stream";
@@ -18,7 +17,7 @@ import { del } from "@vercel/blob";
 export async function POST(request: Request) {
   try {
     // Validate session
-    const session = await getServerSession(authOptions);
+    const session = await auth();
     if (!session || !session.user || !session.user.refreshToken) {
       // Log for debugging missing refreshToken in production
       console.error("Missing refreshToken in session", session?.user);

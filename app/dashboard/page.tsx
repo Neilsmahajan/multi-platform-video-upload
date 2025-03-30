@@ -11,11 +11,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Plus, Upload, Youtube, Instagram, Clock } from "lucide-react";
 import DashboardHeader from "@/app/dashboard/DashboardHeader";
-import { getServerSession } from "next-auth";
+import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 
 export default async function DashboardPage() {
-  const session = await getServerSession();
+  const session = await auth();
   if (!session) {
     return redirect("../api/auth/signin");
   }
