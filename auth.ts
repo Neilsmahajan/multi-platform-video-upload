@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
+import TikTok from "next-auth/providers/tiktok";
 import { prisma } from "@/lib/prisma";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 
@@ -15,6 +16,17 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           access_type: "offline",
           prompt: "consent",
           response_type: "code",
+        },
+      },
+    }),
+    TikTok({
+      clientId: process.env.TIKTOK_CLIENT_ID!,
+      clientSecret: process.env.TIKTOK_CLIENT_SECRET!,
+      authorization: {
+        params: {
+          scope: "user.info.basic user.info.profile video.upload",
+          response_type: "code",
+          client_key: process.env.TIKTOK_CLIENT_ID!,
         },
       },
     }),
