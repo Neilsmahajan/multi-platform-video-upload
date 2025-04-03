@@ -14,12 +14,20 @@ import { Youtube, Instagram, Shield, Bell } from "lucide-react";
 import DashboardHeader from "@/app/dashboard/DashboardHeader";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
+import { prisma } from "@/lib/prisma"; // added import to query accounts
+import TikTokConnect from "./TikTokConnect";
 
 export default async function SettingsPage() {
   const session = await auth();
   if (!session) {
     return redirect("../../api/auth/signin");
   }
+  // Query for a TikTok account associated with the user
+  const tiktokAccount = await prisma.account.findFirst({
+    where: { userId: session.user.id, provider: "tiktok" },
+  });
+  const tiktokConnected = !!tiktokAccount;
+
   return (
     <div className="flex min-h-screen flex-col">
       <DashboardHeader />
@@ -66,10 +74,6 @@ export default async function SettingsPage() {
                     Connected on March 10, 2025
                   </p>
                 </div>
-                {/* <div className="flex gap-4">
-                  <Button variant="outline">Refresh Token</Button>
-                  <Button variant="destructive">Disconnect</Button>
-                </div> */}
               </CardContent>
             </Card>
 
@@ -114,12 +118,14 @@ export default async function SettingsPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="p-4 rounded-lg bg-gray-50 border border-gray-200">
-                  <p className="text-gray-800 font-medium">Not connected</p>
+                  <p className="text-gray-800 font-medium">
+                    {tiktokConnected ? "Connected" : "Not connected"}
+                  </p>
                   <p className="text-gray-700 text-sm mt-1">
                     Connect your TikTok account to post videos
                   </p>
                 </div>
-                <Button>Connect TikTok</Button>
+                <TikTokConnect tiktokConnected={tiktokConnected} />
               </CardContent>
             </Card>
           </TabsContent>
