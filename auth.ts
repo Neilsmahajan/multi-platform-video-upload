@@ -25,7 +25,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       authorization: {
         params: {
           // scope: "user.info.basic user.info.profile video.upload",
-          scope: "user.info.basic video.upload",
+          scope: "user.info.basic",
           response_type: "code",
           client_key: process.env.AUTH_TIKTOK_ID!,
         },
