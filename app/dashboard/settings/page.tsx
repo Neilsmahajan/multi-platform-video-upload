@@ -16,6 +16,7 @@ import { auth } from "@/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma"; // added import to query accounts
 import TikTokConnect from "./TikTokConnect";
+import InstagramConnect from "./InstagramConnect";
 
 export default async function SettingsPage() {
   const session = await auth();
@@ -94,7 +95,7 @@ export default async function SettingsPage() {
                     Connect your Instagram account to post Reels
                   </p>
                 </div>
-                <Button>Connect Instagram</Button>
+                <InstagramConnect instagramConnected={false} />
               </CardContent>
             </Card>
 
