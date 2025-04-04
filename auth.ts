@@ -32,17 +32,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         },
       },
     }),
-    Instagram({
-      clientId: process.env.AUTH_INSTAGRAM_ID!,
-      clientSecret: process.env.AUTH_INSTAGRAM_SECRET!,
-      authorization: {
-        url: "https://api.instagram.com/oauth/authorize",
-        params: {
-          scope: "user_profile",
-          response_type: "code",
-        },
-      },
-    }),
+    Instagram,
   ],
   adapter: PrismaAdapter(prisma),
   session: {
