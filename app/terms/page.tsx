@@ -1,8 +1,14 @@
 import React from "react";
+import Link from "next/link";
 
 export default function TermsOfServicePage() {
   return (
     <main className="max-w-3xl mx-auto py-8 px-4 font-sans">
+      <header className="mb-6">
+        <Link href="/" className="text-lg font-semibold hover:underline">
+          ← Home
+        </Link>
+      </header>
       <h1 className="text-4xl font-bold mb-6">Terms of Service</h1>
       <p className="text-sm text-gray-600 mb-8">
         Effective Date: {new Date().toLocaleDateString()}
