@@ -55,6 +55,14 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           return { tokens };
         },
       },
+      profile(profile) {
+        return {
+          id: profile.open_id,
+          name: profile.display_name,
+          email: profile.email || null,
+          image: profile.avatar_url,
+        };
+      },
     }),
     Instagram({
       clientId: process.env.AUTH_INSTAGRAM_ID!,
