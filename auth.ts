@@ -2,6 +2,7 @@ import NextAuth from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import TikTok from "next-auth/providers/tiktok";
 import Instagram from "next-auth/providers/instagram";
+import Facebook from "next-auth/providers/facebook";
 import { prisma } from "@/lib/prisma";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 
@@ -67,6 +68,15 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     Instagram({
       clientId: process.env.AUTH_INSTAGRAM_ID!,
       clientSecret: process.env.AUTH_INSTAGRAM_SECRET!,
+    }),
+    Facebook({
+      clientId: process.env.AUTH_FACEBOOK_ID!,
+      clientSecret: process.env.AUTH_FACEBOOK_SECRET!,
+      authorization: {
+        params: {
+          scope: "email,ads_read",
+        },
+      },
     }),
   ],
   adapter: PrismaAdapter(prisma),
