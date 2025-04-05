@@ -23,46 +23,6 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     TikTok({
       clientId: process.env.AUTH_TIKTOK_ID!,
       clientSecret: process.env.AUTH_TIKTOK_SECRET!,
-      token: {
-        async request({
-          params,
-          provider,
-        }: {
-          params: { code: string };
-          provider: {
-            token: { url: string };
-            clientId: string;
-            clientSecret: string;
-            callbackUrl: string;
-          };
-        }) {
-          const res = await fetch(provider.token.url, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/x-www-form-urlencoded",
-            },
-            body: new URLSearchParams({
-              client_key: provider.clientId,
-              client_secret: provider.clientSecret,
-              code: params.code,
-              grant_type: "authorization_code",
-              redirect_uri: provider.callbackUrl,
-            }),
-          });
-          const tokens = await res.json();
-          // Force access_token to be a string
-          tokens.access_token = String(tokens.access_token);
-          return { tokens };
-        },
-      },
-      profile(profile) {
-        return {
-          id: profile.open_id,
-          name: profile.display_name,
-          email: profile.email || null,
-          image: profile.avatar_url,
-        };
-      },
     }),
     Instagram({
       clientId: process.env.AUTH_INSTAGRAM_ID!,
