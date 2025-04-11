@@ -1,7 +1,13 @@
+import { Metadata } from "next";
 import DashboardHeader from "@/app/dashboard/DashboardHeader";
 import UploadForm from "@/app/dashboard/upload/UploadForm";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
+
+export const metadata: Metadata = {
+  title: "Upload Video",
+  description: "Upload videos to multiple social media platforms simultaneously",
+};
 
 export default async function UploadPage() {
   const session = await auth();

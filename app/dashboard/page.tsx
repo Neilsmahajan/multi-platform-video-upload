@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Metadata } from "next";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -13,6 +14,11 @@ import { Plus, Upload, Youtube, Instagram, Clock } from "lucide-react";
 import DashboardHeader from "@/app/dashboard/DashboardHeader";
 import { auth } from "@/auth";
 import { redirect } from "next/navigation";
+
+export const metadata: Metadata = {
+  title: "Dashboard",
+  description: "Manage your videos and social media connections",
+};
 
 export default async function DashboardPage() {
   const session = await auth();

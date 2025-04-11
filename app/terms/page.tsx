@@ -1,5 +1,11 @@
+import { Metadata } from "next";
 import React from "react";
 import Link from "next/link";
+
+export const metadata: Metadata = {
+  title: "Terms of Service",
+  description: "Terms and conditions for using Multiplatform Video Upload service",
+};
 
 export default function TermsOfServicePage() {
   return (

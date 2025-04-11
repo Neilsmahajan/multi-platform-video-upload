@@ -1,6 +1,16 @@
+import { Metadata } from "next";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import GetStartedButton from "./GetStartedButton";
+
+export const metadata: Metadata = {
+  title: "Upload Once, Share Everywhere | Multiplatform Video Upload",
+  description: "Connect your YouTube, Instagram, and TikTok accounts to upload and manage your short-form videos from one place.",
+  keywords: ["video upload", "youtube shorts", "instagram reels", "tiktok", "content creator tools", "social media"],
+  alternates: {
+    canonical: "https://multiplatformvideoupload.com",
+  },
+};
 
 export default function Home() {
   return (
@@ -111,7 +121,6 @@ export default function Home() {
           </div>
         </section>
       </main>
-      {/* Footer removed - now rendered via layout */}
     </div>
   );
 }

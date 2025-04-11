@@ -1,5 +1,11 @@
+import { Metadata } from "next";
 import React from "react";
 import Link from "next/link";
+
+export const metadata: Metadata = {
+  title: "Privacy Policy",
+  description: "Learn how Multiplatform Video Upload handles your data and protects your privacy",
+};
 
 export default function PrivacyPolicyPage() {
   return (

@@ -1,3 +1,4 @@
+import { Metadata } from "next";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -17,6 +18,11 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma"; // added import to query accounts
 import TikTokConnect from "./TikTokConnect";
 import InstagramConnect from "./InstagramConnect";
+
+export const metadata: Metadata = {
+  title: "Account Settings",
+  description: "Manage your platform connections and notification preferences",
+};
 
 export default async function SettingsPage() {
   const session = await auth();
