@@ -1,6 +1,5 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
-import TikTok from "next-auth/providers/tiktok";
 // import Instagram from "next-auth/providers/instagram";
 import { prisma } from "@/lib/prisma";
 import { PrismaAdapter } from "@auth/prisma-adapter";
@@ -20,15 +19,88 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         },
       },
     }),
-    TikTok({
-      clientId: process.env.AUTH_TIKTOK_ID!,
-      clientSecret: process.env.AUTH_TIKTOK_SECRET!,
+    {
+      id: "tiktok",
+      name: "TikTok",
+      type: "oauth",
       authorization: {
+        url: "https://www.tiktok.com/v2/auth/authorize/",
         params: {
-          scope: "user.info.basic,video.upload",
+          client_key: process.env.AUTH_TIKTOK_ID,
+          scope: "user.info.basic", // Simplified scope
+          response_type: "code",
         },
       },
-    }),
+      token: {
+        url: "https://open.tiktokapis.com/v2/oauth/token/",
+        async request({
+          params,
+        }: {
+          params: { code: string; [key: string]: unknown };
+          provider: unknown;
+          client_id?: string;
+        }) {
+          // Construct the token request manually to ensure correct format
+          const response = await fetch(
+            "https://open.tiktokapis.com/v2/oauth/token/",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+              },
+              body: new URLSearchParams({
+                client_key: process.env.AUTH_TIKTOK_ID!,
+                client_secret: process.env.AUTH_TIKTOK_SECRET!,
+                code: params.code,
+                grant_type: "authorization_code",
+              }).toString(),
+            },
+          );
+
+          const tokens = await response.json();
+          console.log("TikTok token response:", tokens);
+
+          if (!response.ok)
+            throw new Error(
+              tokens.error_description || "Failed to get access token",
+            );
+
+          return {
+            tokens,
+          };
+        },
+      },
+      userinfo: {
+        url: "https://open.tiktokapis.com/v2/user/info/",
+        async request({
+          tokens,
+        }: {
+          tokens: { access_token: string; [key: string]: unknown };
+        }) {
+          const response = await fetch(
+            "https://open.tiktokapis.com/v2/user/info/?fields=open_id,avatar_url,display_name,username",
+            {
+              headers: {
+                Authorization: `Bearer ${tokens.access_token}`,
+              },
+            },
+          );
+
+          const profile = await response.json();
+          console.log("TikTok profile response:", profile);
+
+          return profile;
+        },
+      },
+      profile(profile) {
+        return {
+          id: profile.data?.user?.open_id || profile.data?.user?.union_id,
+          name: profile.data?.user?.display_name,
+          image: profile.data?.user?.avatar_url,
+          email: null,
+        };
+      },
+    },
     // Instagram({
     //   clientId: process.env.AUTH_INSTAGRAM_ID!,
     //   clientSecret: process.env.AUTH_INSTAGRAM_SECRET!,
@@ -38,7 +110,18 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
   session: {
     strategy: "jwt",
   },
-  jwt: {},
+  cookies: {
+    pkceCodeVerifier: {
+      name: "next-auth.pkce.code_verifier",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+        maxAge: 900, // 15 minutes in seconds
+      },
+    },
+  },
   callbacks: {
     async jwt({ token, account }) {
       // When signing in, persist the refreshToken if available.
@@ -60,11 +143,14 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
   },
   debug: true, // Always enable debug for troubleshooting
   logger: {
-    error(error: Error) {
+    error(error) {
       console.error(error);
     },
-    warn(code) {
-      console.warn(code);
+    warn(message) {
+      console.warn(message);
+    },
+    debug(message) {
+      console.log(message);
     },
   },
 });

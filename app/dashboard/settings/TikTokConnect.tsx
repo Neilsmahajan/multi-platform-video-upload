@@ -1,10 +1,9 @@
-// ---- Client Component ----
-// The following component will render as a client component.
 "use client";
 import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Loader2 } from "lucide-react";
 
 interface TikTokConnectProps {
   tiktokConnected: boolean;
@@ -20,29 +19,21 @@ export default function TikTokConnect({ tiktokConnected }: TikTokConnectProps) {
       setLoading(true);
       setError(null);
 
-      // Call signIn for TikTok with explicit parameters
-      const result = await signIn("tiktok", {
-        callbackUrl: `${window.location.origin}/dashboard/settings`,
-        redirect: false,
+      // Use a simpler approach - direct redirect
+      await signIn("tiktok", {
+        callbackUrl: "/dashboard/settings",
+        redirect: true,
       });
 
-      if (result?.error) {
-        setError(result.error);
-        console.error("TikTok sign-in error:", result.error);
-      } else if (result?.url) {
-        // Redirect manually to have more control
-        window.location.href = result.url;
-      }
+      // The code below won't execute due to redirect: true
     } catch (err) {
       console.error("Error during TikTok sign-in:", err);
       setError("Failed to connect to TikTok. Please try again.");
-    } finally {
       setLoading(false);
     }
   };
 
   const handleDisconnect = async () => {
-    // For disconnect, redirect to an API route to remove the TikTok account (to be implemented)
     router.push("/api/auth/disconnect/tiktok");
   };
 
@@ -64,7 +55,14 @@ export default function TikTokConnect({ tiktokConnected }: TikTokConnectProps) {
         </Button>
       ) : (
         <Button onClick={handleConnect} disabled={loading}>
-          {loading ? "Connecting..." : "Connect TikTok"}
+          {loading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Connecting...
+            </>
+          ) : (
+            "Connect TikTok"
+          )}
         </Button>
       )}
     </>
