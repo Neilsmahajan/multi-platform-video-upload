@@ -1,15 +1,15 @@
 import NextAuth from "next-auth";
-import GoogleProvider from "next-auth/providers/google";
-import TikTokProvider from "next-auth/providers/tiktok";
+import Google from "next-auth/providers/google";
+import TikTok from "next-auth/providers/tiktok";
 // import Instagram from "next-auth/providers/instagram";
 import { prisma } from "@/lib/prisma";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 
 export const { auth, handlers, signIn, signOut } = NextAuth({
   providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    Google({
+      clientId: process.env.AUTH_GOOGLE_ID!,
+      clientSecret: process.env.AUTH_GOOGLE_SECRET!,
       authorization: {
         params: {
           scope:
@@ -20,7 +20,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         },
       },
     }),
-    TikTokProvider({
+    TikTok({
       clientId: process.env.AUTH_TIKTOK_ID!,
       clientSecret: process.env.AUTH_TIKTOK_SECRET!,
       authorization: {
