@@ -12,25 +12,21 @@ interface TikTokConnectProps {
 export default function TikTokConnect({ tiktokConnected }: TikTokConnectProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error] = useState<string | null>(null);
 
-  const handleConnect = async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  const handleConnect = () => {
+    setLoading(true);
 
-      // Simplest approach - direct provider sign-in
-      signIn("tiktok");
+    // Use callbackUrl explicitly to ensure redirect works properly
+    signIn("tiktok", {
+      callbackUrl: `${window.location.origin}/dashboard/settings`,
+      redirect: true,
+    });
 
-      // No need for additional code as the page will redirect
-    } catch (err) {
-      console.error("Error during TikTok sign-in:", err);
-      setError("Failed to connect to TikTok. Please try again.");
-      setLoading(false);
-    }
+    // No need for additional code due to redirect
   };
 
-  const handleDisconnect = async () => {
+  const handleDisconnect = () => {
     router.push("/api/auth/disconnect/tiktok");
   };
 
