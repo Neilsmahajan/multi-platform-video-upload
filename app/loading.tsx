@@ -34,7 +34,10 @@ export default function HomeLoading() {
             </div>
             <div className="mx-auto grid max-w-5xl grid-cols-1 gap-6 py-12 md:grid-cols-3 md:gap-12">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="flex flex-col items-center space-y-2 rounded-lg border p-6 shadow-sm">
+                <div
+                  key={i}
+                  className="flex flex-col items-center space-y-2 rounded-lg border p-6 shadow-sm"
+                >
                   <Skeleton className="h-12 w-12 rounded-full" />
                   <Skeleton className="h-6 w-36" />
                   <Skeleton className="h-4 w-full" />

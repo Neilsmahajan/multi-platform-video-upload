@@ -27,7 +27,7 @@ export const metadata: Metadata = {
     "instagram reels",
     "tiktok",
     "content creation",
-    "social media management"
+    "social media management",
   ],
   authors: [
     {
@@ -42,7 +42,8 @@ export const metadata: Metadata = {
     locale: "en_US",
     url: "https://multiplatformvideoupload.com",
     title: "Multiplatform Video Upload",
-    description: "Upload once, share everywhere. Streamline your short-form content across YouTube, Instagram, and TikTok.",
+    description:
+      "Upload once, share everywhere. Streamline your short-form content across YouTube, Instagram, and TikTok.",
     siteName: "Multiplatform Video Upload",
     images: [
       {
@@ -56,7 +57,8 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "Multiplatform Video Upload",
-    description: "Upload once, share everywhere. Streamline your short-form content across YouTube, Instagram, and TikTok.",
+    description:
+      "Upload once, share everywhere. Streamline your short-form content across YouTube, Instagram, and TikTok.",
     images: ["/multiplatform-video-upload-cover-photo.png"],
   },
   robots: {

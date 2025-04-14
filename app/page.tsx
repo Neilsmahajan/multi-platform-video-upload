@@ -5,8 +5,16 @@ import GetStartedButton from "./GetStartedButton";
 
 export const metadata: Metadata = {
   title: "Upload Once, Share Everywhere | Multiplatform Video Upload",
-  description: "Connect your YouTube, Instagram, and TikTok accounts to upload and manage your short-form videos from one place.",
-  keywords: ["video upload", "youtube shorts", "instagram reels", "tiktok", "content creator tools", "social media"],
+  description:
+    "Connect your YouTube, Instagram, and TikTok accounts to upload and manage your short-form videos from one place.",
+  keywords: [
+    "video upload",
+    "youtube shorts",
+    "instagram reels",
+    "tiktok",
+    "content creator tools",
+    "social media",
+  ],
   alternates: {
     canonical: "https://multiplatformvideoupload.com",
   },
