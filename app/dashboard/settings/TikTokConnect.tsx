@@ -17,10 +17,7 @@ export default function TikTokConnect({ tiktokConnected }: TikTokConnectProps) {
   const handleConnect = async () => {
     setLoading(true);
     // Call signIn for TikTok with callback to current page
-    await signIn("tiktok", {
-      callbackUrl: window.location.href,
-      redirect: true,
-    });
+    await signIn("tiktok");
     setLoading(false);
   };
 
