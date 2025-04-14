@@ -58,5 +58,13 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       return session;
     },
   },
-  debug: process.env.NODE_ENV !== "production", // Enable debug in non-production
+  debug: true, // Always enable debug for troubleshooting
+  logger: {
+    error(error: Error) {
+      console.error(error);
+    },
+    warn(code) {
+      console.warn(code);
+    },
+  },
 });

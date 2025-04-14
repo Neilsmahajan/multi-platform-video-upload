@@ -13,12 +13,32 @@ interface TikTokConnectProps {
 export default function TikTokConnect({ tiktokConnected }: TikTokConnectProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleConnect = async () => {
-    setLoading(true);
-    // Call signIn for TikTok with callback to current page
-    await signIn("tiktok");
-    setLoading(false);
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Call signIn for TikTok with explicit parameters
+      const result = await signIn("tiktok", {
+        callbackUrl: `${window.location.origin}/dashboard/settings`,
+        redirect: false,
+      });
+
+      if (result?.error) {
+        setError(result.error);
+        console.error("TikTok sign-in error:", result.error);
+      } else if (result?.url) {
+        // Redirect manually to have more control
+        window.location.href = result.url;
+      }
+    } catch (err) {
+      console.error("Error during TikTok sign-in:", err);
+      setError("Failed to connect to TikTok. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDisconnect = async () => {
@@ -28,6 +48,12 @@ export default function TikTokConnect({ tiktokConnected }: TikTokConnectProps) {
 
   return (
     <>
+      {error && (
+        <div className="p-3 mb-3 bg-red-50 border border-red-200 text-red-700 rounded-md">
+          {error}
+        </div>
+      )}
+
       {tiktokConnected ? (
         <Button
           variant="destructive"
@@ -38,7 +64,7 @@ export default function TikTokConnect({ tiktokConnected }: TikTokConnectProps) {
         </Button>
       ) : (
         <Button onClick={handleConnect} disabled={loading}>
-          Connect TikTok
+          {loading ? "Connecting..." : "Connect TikTok"}
         </Button>
       )}
     </>
