@@ -44,7 +44,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       },
       userinfo: {
         url: "https://open.tiktokapis.com/v2/user/info/",
-        request: ({ tokens }) => {
+        request: ({ tokens }: { tokens: { access_token: string } }) => {
           return {
             url: "https://open.tiktokapis.com/v2/user/info/",
             headers: {
