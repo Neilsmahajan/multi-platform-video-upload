@@ -20,13 +20,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         },
       },
     }),
-    TikTok({
-      authorization: {
-        params: {
-          scope: "user.info.basic,video.upload",
-        },
-      },
-    }),
+    TikTok,
     // Instagram({
     //   clientId: process.env.AUTH_INSTAGRAM_ID!,
     //   clientSecret: process.env.AUTH_INSTAGRAM_SECRET!,
