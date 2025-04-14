@@ -19,13 +19,10 @@ export default function TikTokConnect({ tiktokConnected }: TikTokConnectProps) {
       setLoading(true);
       setError(null);
 
-      // Use a simpler approach - direct redirect
-      await signIn("tiktok", {
-        callbackUrl: "/dashboard/settings",
-        redirect: true,
-      });
+      // Simplest approach - direct provider sign-in
+      signIn("tiktok");
 
-      // The code below won't execute due to redirect: true
+      // No need for additional code as the page will redirect
     } catch (err) {
       console.error("Error during TikTok sign-in:", err);
       setError("Failed to connect to TikTok. Please try again.");
