@@ -1,6 +1,6 @@
 import NextAuth from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
-import TikTok from "next-auth/providers/tiktok";
+import TikTokProvider from "next-auth/providers/tiktok";
 // import Instagram from "next-auth/providers/instagram";
 import { prisma } from "@/lib/prisma";
 import { PrismaAdapter } from "@auth/prisma-adapter";
@@ -20,7 +20,15 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         },
       },
     }),
-    TikTok,
+    TikTokProvider({
+      clientId: process.env.AUTH_TIKTOK_ID!,
+      clientSecret: process.env.AUTH_TIKTOK_SECRET!,
+      authorization: {
+        params: {
+          scope: "user.info.basic,video.upload",
+        },
+      },
+    }),
     // Instagram({
     //   clientId: process.env.AUTH_INSTAGRAM_ID!,
     //   clientSecret: process.env.AUTH_INSTAGRAM_SECRET!,
@@ -50,4 +58,5 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       return session;
     },
   },
+  debug: process.env.NODE_ENV !== "production", // Enable debug in non-production
 });
