@@ -1,11 +1,9 @@
-import DashboardHeader from "@/app/dashboard/DashboardHeader";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 
 export default function SettingsLoading() {
   return (
     <div className="flex min-h-screen flex-col">
-      <DashboardHeader />
       <main className="flex-1 container py-6">
         <div className="mb-6">
           <Skeleton className="h-9 w-28 mb-2" />

@@ -1,4 +1,3 @@
-import DashboardHeader from "@/app/dashboard/DashboardHeader";
 import {
   Card,
   CardContent,
@@ -10,7 +9,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 export default function DashboardLoading() {
   return (
     <div className="flex min-h-screen flex-col">
-      <DashboardHeader />
       <main className="flex-1 container py-6">
         <div className="flex items-center justify-between mb-6">
           <Skeleton className="h-9 w-36" />

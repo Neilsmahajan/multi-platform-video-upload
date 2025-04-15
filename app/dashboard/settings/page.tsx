@@ -12,7 +12,6 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Youtube, Instagram, Shield, Bell } from "lucide-react";
-import DashboardHeader from "@/app/dashboard/DashboardHeader";
 import DashboardAuthCheck from "@/components/DashboardAuthCheck";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
@@ -39,7 +38,6 @@ export default async function SettingsPage() {
   return (
     <DashboardAuthCheck>
       <div className="flex min-h-screen flex-col">
-        <DashboardHeader />
         <main className="flex-1 container py-6">
           <div className="mb-6">
             <h1 className="text-3xl font-bold">Settings</h1>
