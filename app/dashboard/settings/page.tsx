@@ -168,15 +168,6 @@ export default async function SettingsPage() {
                           id="upload-email"
                           className="h-4 w-4"
                         />
-                        <Label htmlFor="upload-push" className="text-sm">
-                          Push
-                        </Label>
-                        <Input
-                          type="checkbox"
-                          id="upload-push"
-                          className="h-4 w-4"
-                          defaultChecked
-                        />
                       </div>
                     </div>
 
@@ -196,15 +187,6 @@ export default async function SettingsPage() {
                         <Input
                           type="checkbox"
                           id="publish-email"
-                          className="h-4 w-4"
-                          defaultChecked
-                        />
-                        <Label htmlFor="publish-push" className="text-sm">
-                          Push
-                        </Label>
-                        <Input
-                          type="checkbox"
-                          id="publish-push"
                           className="h-4 w-4"
                           defaultChecked
                         />
@@ -229,14 +211,6 @@ export default async function SettingsPage() {
                           id="account-email"
                           className="h-4 w-4"
                           defaultChecked
-                        />
-                        <Label htmlFor="account-push" className="text-sm">
-                          Push
-                        </Label>
-                        <Input
-                          type="checkbox"
-                          id="account-push"
-                          className="h-4 w-4"
                         />
                       </div>
                     </div>
