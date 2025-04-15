@@ -88,9 +88,13 @@ export default async function DashboardPage() {
                     </div>
                     <Badge
                       variant="outline"
-                      className="bg-red-50 text-red-700 border-red-200"
+                      className={
+                        instagramConnected
+                          ? "bg-green-50 text-green-700 border-green-200"
+                          : "bg-red-50 text-red-700 border-red-200"
+                      }
                     >
-                      Not Connected
+                      {instagramConnected ? "Connected" : "Not Connected"}
                     </Badge>
                   </div>
                   <div className="flex items-center justify-between">
@@ -110,9 +114,13 @@ export default async function DashboardPage() {
                     </div>
                     <Badge
                       variant="outline"
-                      className="bg-red-50 text-red-700 border-red-200"
+                      className={
+                        tiktokConnected
+                          ? "bg-green-50 text-green-700 border-green-200"
+                          : "bg-red-50 text-red-700 border-red-200"
+                      }
                     >
-                      Not Connected
+                      {tiktokConnected ? "Connected" : "Not Connected"}
                     </Badge>
                   </div>
                 </div>
