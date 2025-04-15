@@ -6,10 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 
 interface TikTokConnectProps {
-  tiktokConnected: boolean;
+  tiktokConnected?: boolean;
 }
 
-export default function TikTokConnect({ tiktokConnected }: TikTokConnectProps) {
+export default function TikTokConnect({
+  tiktokConnected = false,
+}: TikTokConnectProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error] = useState<string | null>(null);
@@ -43,11 +45,12 @@ export default function TikTokConnect({ tiktokConnected }: TikTokConnectProps) {
           variant="destructive"
           onClick={handleDisconnect}
           disabled={loading}
+          className="w-full"
         >
           Disconnect TikTok
         </Button>
       ) : (
-        <Button onClick={handleConnect} disabled={loading}>
+        <Button onClick={handleConnect} disabled={loading} className="w-full">
           {loading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />

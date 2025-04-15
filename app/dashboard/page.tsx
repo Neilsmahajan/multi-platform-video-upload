@@ -10,10 +10,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Upload, Youtube, Instagram, Clock } from "lucide-react";
+import { Upload, Youtube, Instagram, Clock } from "lucide-react";
 import DashboardHeader from "@/app/dashboard/DashboardHeader";
 import DashboardAuthCheck from "@/components/DashboardAuthCheck";
 import { auth } from "@/auth";
+import { prisma } from "@/lib/prisma";
+import TikTokConnect from "@/components/social/TikTokConnect";
+import InstagramConnect from "@/components/social/InstagramConnect";
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -22,6 +25,24 @@ export const metadata: Metadata = {
 
 export default async function DashboardPage() {
   const session = await auth();
+
+  // Initialize connection state variables
+  let instagramConnected = false;
+  let tiktokConnected = false;
+
+  if (session && session.user) {
+    // Check if Instagram account is connected
+    const instagramAccount = await prisma.account.findFirst({
+      where: { userId: session.user.id, provider: "instagram" },
+    });
+    instagramConnected = !!instagramAccount;
+
+    // Check if TikTok account is connected
+    const tiktokAccount = await prisma.account.findFirst({
+      where: { userId: session.user.id, provider: "tiktok" },
+    });
+    tiktokConnected = !!tiktokAccount;
+  }
 
   return (
     <DashboardAuthCheck>
@@ -67,9 +88,13 @@ export default async function DashboardPage() {
                     </div>
                     <Badge
                       variant="outline"
-                      className="bg-red-50 text-red-700 border-red-200"
+                      className={`${
+                        instagramConnected
+                          ? "bg-green-50 text-green-700 border-green-200"
+                          : "bg-red-50 text-red-700 border-red-200"
+                      }`}
                     >
-                      Not Connected
+                      {instagramConnected ? "Connected" : "Not Connected"}
                     </Badge>
                   </div>
                   <div className="flex items-center justify-between">
@@ -89,9 +114,13 @@ export default async function DashboardPage() {
                     </div>
                     <Badge
                       variant="outline"
-                      className="bg-red-50 text-red-700 border-red-200"
+                      className={`${
+                        tiktokConnected
+                          ? "bg-green-50 text-green-700 border-green-200"
+                          : "bg-red-50 text-red-700 border-red-200"
+                      }`}
                     >
-                      Not Connected
+                      {tiktokConnected ? "Connected" : "Not Connected"}
                     </Badge>
                   </div>
                 </div>
@@ -194,15 +223,20 @@ export default async function DashboardPage() {
                     <Instagram className="h-5 w-5 text-pink-600" />
                     Instagram
                   </CardTitle>
-                  <CardDescription>Connect to post Reels</CardDescription>
+                  <CardDescription>
+                    {instagramConnected
+                      ? `Connected as ${session?.user.email}`
+                      : "Connect to post Reels"}
+                  </CardDescription>
                 </CardHeader>
                 <CardFooter>
-                  <Button asChild className="w-full">
-                    <Link href="dashboard/settings">
-                      <Plus className="mr-2 h-4 w-4" />
-                      Connect
-                    </Link>
-                  </Button>
+                  {instagramConnected ? (
+                    <Button variant="outline" className="w-full">
+                      Manage
+                    </Button>
+                  ) : (
+                    <InstagramConnect />
+                  )}
                 </CardFooter>
               </Card>
 
@@ -222,15 +256,20 @@ export default async function DashboardPage() {
                     </svg>
                     TikTok
                   </CardTitle>
-                  <CardDescription>Connect to post videos</CardDescription>
+                  <CardDescription>
+                    {tiktokConnected
+                      ? `Connected as ${session?.user.email}`
+                      : "Connect to post videos"}
+                  </CardDescription>
                 </CardHeader>
                 <CardFooter>
-                  <Button asChild className="w-full">
-                    <Link href="dashboard/settings">
-                      <Plus className="mr-2 h-4 w-4" />
-                      Connect
-                    </Link>
-                  </Button>
+                  {tiktokConnected ? (
+                    <Button variant="outline" className="w-full">
+                      Manage
+                    </Button>
+                  ) : (
+                    <TikTokConnect />
+                  )}
                 </CardFooter>
               </Card>
             </div>

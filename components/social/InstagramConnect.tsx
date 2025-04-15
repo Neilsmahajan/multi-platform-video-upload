@@ -6,11 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 
 interface InstagramConnectProps {
-  instagramConnected: boolean;
+  instagramConnected?: boolean;
 }
 
 export default function InstagramConnect({
-  instagramConnected,
+  instagramConnected = false,
 }: InstagramConnectProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -31,7 +31,6 @@ export default function InstagramConnect({
   };
 
   const handleDisconnect = async () => {
-    // Redirect to an API route for disconnect when implemented
     router.push("/api/auth/disconnect/instagram");
   };
 
@@ -48,11 +47,12 @@ export default function InstagramConnect({
           variant="destructive"
           onClick={handleDisconnect}
           disabled={loading}
+          className="w-full"
         >
           Disconnect Instagram
         </Button>
       ) : (
-        <Button onClick={handleConnect} disabled={loading}>
+        <Button onClick={handleConnect} disabled={loading} className="w-full">
           {loading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
