@@ -10,10 +10,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Upload, Youtube, Instagram, Clock } from "lucide-react";
+import { Upload, Youtube, Instagram, Clock } from "lucide-react";
 import DashboardHeader from "@/app/dashboard/DashboardHeader";
 import DashboardAuthCheck from "@/components/DashboardAuthCheck";
 import { auth } from "@/auth";
+import { prisma } from "@/lib/prisma";
+import TikTokConnect from "@/components/TikTokConnect";
+import InstagramConnect from "@/components/InstagramConnect";
 
 export const metadata: Metadata = {
   title: "Dashboard",
@@ -22,6 +25,24 @@ export const metadata: Metadata = {
 
 export default async function DashboardPage() {
   const session = await auth();
+
+  // Default connection status
+  let tiktokConnected = false;
+  let instagramConnected = false;
+
+  if (session) {
+    // Check TikTok connection status
+    const tiktokAccount = await prisma.account.findFirst({
+      where: { userId: session.user.id, provider: "tiktok" },
+    });
+    tiktokConnected = !!tiktokAccount;
+
+    // Check Instagram connection status
+    const instagramAccount = await prisma.account.findFirst({
+      where: { userId: session.user.id, provider: "instagram" },
+    });
+    instagramConnected = !!instagramAccount;
+  }
 
   return (
     <DashboardAuthCheck>
@@ -197,12 +218,7 @@ export default async function DashboardPage() {
                   <CardDescription>Connect to post Reels</CardDescription>
                 </CardHeader>
                 <CardFooter>
-                  <Button asChild className="w-full">
-                    <Link href="dashboard/settings">
-                      <Plus className="mr-2 h-4 w-4" />
-                      Connect
-                    </Link>
-                  </Button>
+                  <InstagramConnect instagramConnected={instagramConnected} />
                 </CardFooter>
               </Card>
 
@@ -225,12 +241,7 @@ export default async function DashboardPage() {
                   <CardDescription>Connect to post videos</CardDescription>
                 </CardHeader>
                 <CardFooter>
-                  <Button asChild className="w-full">
-                    <Link href="dashboard/settings">
-                      <Plus className="mr-2 h-4 w-4" />
-                      Connect
-                    </Link>
-                  </Button>
+                  <TikTokConnect tiktokConnected={tiktokConnected} />
                 </CardFooter>
               </Card>
             </div>
