@@ -17,9 +17,9 @@ export default function TikTokConnect({ tiktokConnected }: TikTokConnectProps) {
   const handleConnect = () => {
     setLoading(true);
 
-    // Use callbackUrl explicitly to ensure redirect works properly
+    // Use current page URL as callback destination
     signIn("tiktok", {
-      callbackUrl: `${window.location.origin}/dashboard/settings`,
+      callbackUrl: window.location.href,
       redirect: true,
     });
 

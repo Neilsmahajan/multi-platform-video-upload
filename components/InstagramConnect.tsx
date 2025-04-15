@@ -20,7 +20,7 @@ export default function InstagramConnect({
     setLoading(true);
     try {
       await signIn("instagram", {
-        callbackUrl: `${window.location.origin}/dashboard/settings`,
+        callbackUrl: window.location.href,
         redirect: true,
       });
     } catch (err) {
