@@ -1,8 +1,9 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
-import TikTok from "next-auth/providers/tiktok";
+// import TikTok from "next-auth/providers/tiktok";
 import { prisma } from "@/lib/prisma";
 import { PrismaAdapter } from "@auth/prisma-adapter";
+import { customFetch } from "next-auth";
 
 export const { auth, handlers, signIn, signOut } = NextAuth({
   providers: [
@@ -19,15 +20,59 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         },
       },
     }),
-    TikTok({
-      clientId: process.env.AUTH_TIKTOK_ID!,
-      clientSecret: process.env.AUTH_TIKTOK_SECRET!,
+    {
+      id: "tiktok",
+      name: "TikTok",
+      type: "oauth",
+      client: {
+        token_endpoint_auth_method: "client_secret_post",
+      },
+      async [customFetch](
+        input: RequestInfo | URL,
+        init?: RequestInit,
+      ): Promise<Response> {
+        const url = new URL(
+          input instanceof Request ? input.url : input.toString(),
+        );
+        if (url.pathname.endsWith("/token/")) {
+          const customHeaders = {
+            ...init?.headers,
+            "content-type": "application/x-www-form-urlencoded",
+          };
+
+          const customBody = new URLSearchParams((init?.body as string) || "");
+          customBody.append("client_key", process.env.AUTH_TIKTOK_ID!);
+
+          const response = await fetch(input, {
+            ...init,
+            headers: customHeaders,
+            body: customBody.toString(),
+          });
+          const json = await response.json();
+          return Response.json({ ...json });
+        }
+        return fetch(input, init);
+      },
       authorization: {
+        url: "https://www.tiktok.com/v2/auth/authorize",
         params: {
-          scope: "user.info.basic,video.upload",
+          client_key: process.env.AUTH_TIKTOK_ID,
+          scope: "user.info.profile,video.upload", // Using proper scope format
+          response_type: "code",
         },
       },
-    }),
+      token: "https://open.tiktokapis.com/v2/oauth/token/",
+      userinfo:
+        "https://open.tiktokapis.com/v2/user/info/?fields=open_id,avatar_url,display_name,username",
+      profile(profile) {
+        return {
+          id: profile.data.user.open_id,
+          name: profile.data.user.display_name,
+          image: profile.data.user.avatar_url,
+          email: null, // Email is not supported by TikTok
+        };
+      },
+    },
   ],
   adapter: PrismaAdapter(prisma),
   session: {
