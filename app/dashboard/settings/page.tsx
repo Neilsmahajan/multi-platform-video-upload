@@ -16,8 +16,8 @@ import DashboardHeader from "@/app/dashboard/DashboardHeader";
 import DashboardAuthCheck from "@/components/DashboardAuthCheck";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import TikTokConnect from "../../../components/TikTokConnect";
-import InstagramConnect from "../../../components/InstagramConnect";
+import TikTokConnect from "@/components/TikTokConnect";
+import InstagramConnect from "@/components/InstagramConnect";
 
 export const metadata: Metadata = {
   title: "Account Settings",
