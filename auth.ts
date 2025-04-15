@@ -25,8 +25,15 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       id: "instagram",
       name: "Instagram",
       type: "oauth",
-      authorization:
-        "https://api.instagram.com/oauth/authorize?scope=user_profile",
+      authorization: {
+        url: "https://api.instagram.com/oauth/authorize",
+        params: {
+          client_id: process.env.AUTH_INSTAGRAM_ID,
+          scope: "user_profile",
+          response_type: "code",
+          state: "instagram",
+        },
+      },
       token: "https://api.instagram.com/oauth/access_token",
       userinfo:
         "https://graph.instagram.com/me?fields=id,username,account_type,name",
