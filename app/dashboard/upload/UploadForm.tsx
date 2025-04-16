@@ -95,54 +95,67 @@ export default function UploadForm({
       // Track successful uploads
       let youtubeSuccess = false;
       let instagramSuccess = false;
+      const uploadErrors = [];
 
       // Call YouTube upload endpoint with blob URL and metadata
-      const youtubeRes = await fetch("/api/youtube/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          blobUrl: blobResult.url,
-          title,
-          description,
-          privacyStatus,
-        }),
-      });
-      const youtubeData = await youtubeRes.json();
-      youtubeSuccess = youtubeRes.ok && youtubeData.videoId;
+      try {
+        const youtubeRes = await fetch("/api/youtube/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            blobUrl: blobResult.url,
+            title,
+            description,
+            privacyStatus,
+          }),
+        });
+        const youtubeData = await youtubeRes.json();
+
+        if (youtubeRes.ok && youtubeData.videoId) {
+          youtubeSuccess = true;
+        } else {
+          console.error("YouTube upload failed:", youtubeData);
+          uploadErrors.push(`YouTube: ${youtubeData.error || "Unknown error"}`);
+        }
+      } catch (youtubeError) {
+        console.error("Error in YouTube upload:", youtubeError);
+        uploadErrors.push(
+          `YouTube: ${youtubeError instanceof Error ? youtubeError.message : "Unknown error"}`,
+        );
+      }
 
       // If Instagram is connected, also upload to Instagram
       if (instagramConnected) {
         try {
-          // Fetch user's Instagram business account ID from the session
-          const userDataRes = await fetch("/api/auth/user-data", {
-            method: "GET",
+          // Get the Instagram user ID from database
+          const instagramRes = await fetch("/api/instagram/upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              mediaUrl: blobResult.url,
+              caption: description || title,
+              // Optional alt text can be added here
+            }),
           });
-          const userData = await userDataRes.json();
 
-          if (userData.instagramUserId) {
-            // Call Instagram upload endpoint
-            const instagramRes = await fetch("/api/instagram/upload", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                igUserId: userData.instagramUserId,
-                mediaUrl: blobResult.url,
-                caption: description || title,
-                // Optional alt text can be added here
-              }),
-            });
+          const instagramData = await instagramRes.json();
 
-            const instagramData = await instagramRes.json();
-            instagramSuccess = instagramRes.ok && instagramData.mediaId;
-
-            if (!instagramSuccess) {
-              console.error("Instagram upload failed:", instagramData);
-            }
+          if (instagramRes.ok && instagramData.mediaId) {
+            instagramSuccess = true;
           } else {
-            console.error("Missing Instagram user ID");
+            console.error("Instagram upload failed:", instagramData);
+            uploadErrors.push(
+              `Instagram: ${instagramData.error || "Unknown error"}`,
+            );
+            if (instagramData.details) {
+              console.error("Instagram error details:", instagramData.details);
+            }
           }
         } catch (instagramError) {
           console.error("Error uploading to Instagram:", instagramError);
+          uploadErrors.push(
+            `Instagram: ${instagramError instanceof Error ? instagramError.message : "Unknown error"}`,
+          );
         }
       }
 
@@ -155,6 +168,7 @@ export default function UploadForm({
         setDescription("");
       } else {
         setUploadStatus("error");
+        console.error("Upload errors:", uploadErrors);
       }
     } catch (err) {
       console.error("Upload failed", err);

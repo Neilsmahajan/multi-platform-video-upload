@@ -13,16 +13,17 @@ import { OAuth2Client } from "google-auth-library";
 import { Readable } from "stream";
 import { ReadableStream as WebReadableStream } from "stream/web";
 import { del } from "@vercel/blob";
+import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
   try {
     // Validate session
     const session = await auth();
-    if (!session || !session.user || !session.user.refreshToken) {
-      // Log for debugging missing refreshToken in production
-      console.error("Missing refreshToken in session", session?.user);
+    if (!session || !session.user) {
+      console.error("No session or user found");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
     // Parse JSON body; expects blobUrl, title, description, privacyStatus
     const {
       blobUrl,
@@ -30,12 +31,30 @@ export async function POST(request: Request) {
       description = "",
       privacyStatus,
     } = await request.json();
+
     if (!blobUrl || !title) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 },
       );
     }
+
+    // Get the Google account for the current user
+    const googleAccount = await prisma.account.findFirst({
+      where: {
+        userId: session.user.id,
+        provider: "google",
+      },
+    });
+
+    if (!googleAccount || !googleAccount.refresh_token) {
+      console.error("Google account not found or missing refresh token");
+      return NextResponse.json(
+        { error: "Google account not properly connected" },
+        { status: 401 },
+      );
+    }
+
     // Fetch the video stream from the blob URL
     const blobRes = await fetch(blobUrl);
     if (!blobRes.ok || !blobRes.body) {
@@ -44,6 +63,7 @@ export async function POST(request: Request) {
         { status: 500 },
       );
     }
+
     const blobStream = Readable.fromWeb(
       blobRes.body as WebReadableStream<unknown>,
     );
@@ -52,18 +72,20 @@ export async function POST(request: Request) {
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
     const redirectUri =
-      // "http://localhost:3000/api/auth/callback/google";
       "https://multiplatformvideoupload.com/api/auth/callback/google";
+
     if (!clientId || !clientSecret) {
       return NextResponse.json(
         { error: "Missing YouTube OAuth credentials" },
         { status: 500 },
       );
     }
+
     const oauth2Client = new OAuth2Client(clientId, clientSecret, redirectUri);
     oauth2Client.setCredentials({
-      refresh_token: session.user.refreshToken as string,
+      refresh_token: googleAccount.refresh_token,
     });
+
     await oauth2Client.getAccessToken();
 
     // Upload video to YouTube using the stream from blob

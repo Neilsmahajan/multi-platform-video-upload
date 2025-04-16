@@ -219,19 +219,27 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
   },
   callbacks: {
     // Handle JWT callback
-    async jwt({ token, account }) {
-      if (account) {
-        token.accessToken = account.access_token;
-        if (account.refresh_token) {
-          token.refreshToken = account.refresh_token;
-        }
+    async jwt({ token, account, user }) {
+      // Initial sign in
+      if (account && user) {
+        return {
+          ...token,
+          accessToken: account.access_token,
+          refreshToken: account.refresh_token,
+          provider: account.provider,
+          providerAccountId: account.providerAccountId,
+          userId: user.id,
+        };
       }
       return token;
     },
     // Handle session callback
     async session({ session, token }) {
       if (session.user) {
+        session.user.id = token.userId as string;
+        session.user.provider = token.provider as string;
         session.user.refreshToken = token.refreshToken as string;
+        session.user.accessToken = token.accessToken as string;
       }
       return session;
     },
