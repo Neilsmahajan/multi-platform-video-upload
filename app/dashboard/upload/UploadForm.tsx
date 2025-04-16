@@ -218,6 +218,38 @@ export default function UploadForm({
                 ))}
               </ul>
             )}
+
+            {/* Display setup instructions for Instagram Business Account errors */}
+            {errorMessages.some(
+              (msg) =>
+                msg.includes("Instagram Business Account Required") ||
+                msg.includes("No Facebook Pages Found") ||
+                msg.includes("No Instagram Business Account Found"),
+            ) && (
+              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md">
+                <h4 className="font-medium text-amber-800 mb-2">
+                  Instagram Business Account Setup Required
+                </h4>
+                <p className="text-amber-700 mb-2">
+                  To publish videos to Instagram, you need to have:
+                </p>
+                <ol className="list-decimal list-inside text-amber-700">
+                  <li>
+                    An Instagram Professional account (Business or Creator)
+                  </li>
+                  <li>Connected to a Facebook Page</li>
+                  <li>Proper permissions granted to this app</li>
+                </ol>
+                <a
+                  href="https://help.instagram.com/502981923235522"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:underline mt-2 inline-block"
+                >
+                  Learn how to set up your Instagram Business account
+                </a>
+              </div>
+            )}
           </AlertDescription>
         </Alert>
       )}
@@ -412,6 +444,11 @@ export default function UploadForm({
                     <AlertDescription className="text-green-700">
                       Your Instagram account is connected and ready to post
                       Reels. Toggle the switch to disconnect your account.
+                      <div className="mt-2 text-amber-600 text-sm">
+                        <strong>Note:</strong> For publishing videos, your
+                        Instagram account must be a Professional account
+                        (Business or Creator) and connected to a Facebook Page.
+                      </div>
                     </AlertDescription>
                   </Alert>
                 ) : (

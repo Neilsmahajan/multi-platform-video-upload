@@ -101,6 +101,12 @@ export async function POST(request: Request) {
             error: "Instagram Business Account Required",
             details:
               "To publish videos, you need to use an Instagram Business Account connected to a Facebook Page. Your current Instagram account doesn't have the proper permissions for publishing content.",
+            setupInstructions: [
+              "1. Convert your Instagram account to a Professional account (Business or Creator)",
+              "2. Connect your Instagram Professional account to a Facebook Page",
+              "3. Reconnect your Instagram account in this app",
+              "Learn more at: https://help.instagram.com/502981923235522",
+            ],
           },
           { status: 403 },
         );
@@ -132,6 +138,11 @@ export async function POST(request: Request) {
               error: "No Facebook Pages Found",
               details:
                 "Your Facebook account doesn't have any Pages, or your app doesn't have permission to access them. You need a Facebook Page connected to an Instagram Business Account to publish videos.",
+              setupInstructions: [
+                "1. Create a Facebook Page at https://facebook.com/pages/create",
+                "2. Connect your Instagram Professional account to this Page",
+                "3. Reconnect your Instagram account in this app",
+              ],
             },
             { status: 403 },
           );
@@ -152,6 +163,12 @@ export async function POST(request: Request) {
               error: "No Instagram Business Account Found",
               details:
                 "None of your Facebook Pages are connected to an Instagram Business Account. Please connect an Instagram Business Account to one of your Facebook Pages.",
+              setupInstructions: [
+                "1. Go to your Facebook Page settings",
+                "2. Look for 'Instagram' in the Page settings menu",
+                "3. Connect your Instagram Professional account",
+                "4. Reconnect your Instagram account in this app",
+              ],
             },
             { status: 403 },
           );
