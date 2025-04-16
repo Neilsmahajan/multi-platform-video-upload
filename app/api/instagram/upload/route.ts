@@ -58,48 +58,144 @@ export async function POST(request: Request) {
 
     console.log("Found Instagram account with access token");
 
+    // Get app credentials from environment variables
+    const appId = process.env.AUTH_INSTAGRAM_ID;
+    const appSecret = process.env.AUTH_INSTAGRAM_SECRET;
+
+    if (!appId || !appSecret) {
+      console.error("Missing Instagram app credentials");
+      return NextResponse.json(
+        { error: "Server configuration error - missing Instagram credentials" },
+        { status: 500 },
+      );
+    }
+
+    // Exchange short-lived token for a long-lived token if not already done
+    // Note: If your token is already long-lived, you can skip this step
+    let accessToken = instagramAccount.access_token;
+
+    try {
+      console.log("Converting to long-lived token...");
+      const exchangeResponse = await fetch(
+        `https://graph.facebook.com/v18.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${accessToken}`,
+      );
+
+      if (exchangeResponse.ok) {
+        const exchangeData = await exchangeResponse.json();
+        accessToken = exchangeData.access_token;
+        console.log("Successfully obtained long-lived token");
+
+        // Update the token in database for future use
+        await prisma.account.update({
+          where: { id: instagramAccount.id },
+          data: { access_token: accessToken },
+        });
+      } else {
+        const errorText = await exchangeResponse.text();
+        console.log("Could not exchange for long-lived token:", errorText);
+        // Continue with original token as fallback
+      }
+    } catch (tokenError) {
+      console.error("Error exchanging token:", tokenError);
+      // Continue with original token as fallback
+    }
+
+    // Debug token to check its validity and associated permissions
+    console.log("Checking token information...");
+    const debugResponse = await fetch(
+      `https://graph.facebook.com/debug_token?input_token=${accessToken}&access_token=${accessToken}`,
+    );
+
+    if (debugResponse.ok) {
+      const debugData = await debugResponse.json();
+      console.log("Token debug info:", JSON.stringify(debugData, null, 2));
+    } else {
+      console.log("Could not debug token");
+    }
+
     // Get the Instagram business account ID
     console.log("Fetching Instagram business account ID");
     const userRes = await fetch(
-      `https://graph.facebook.com/v18.0/me?fields=id,instagram_business_account&access_token=${instagramAccount.access_token}`,
+      `https://graph.facebook.com/v18.0/me/accounts?access_token=${accessToken}`,
     );
 
     if (!userRes.ok) {
       const userError = await userRes.text();
-      console.error("Failed to get Instagram business account:", userError);
+      console.error("Failed to get Facebook Pages:", userError);
       return NextResponse.json(
         {
-          error: "Failed to get Instagram business account",
+          error:
+            "Failed to get Facebook Pages. Make sure your Instagram account is a Professional account linked to a Facebook Page.",
           details: userError,
         },
         { status: 500 },
       );
     }
 
-    const userData = await userRes.json();
+    const pagesData = await userRes.json();
+    console.log("Facebook Pages data:", JSON.stringify(pagesData, null, 2));
 
-    if (
-      !userData.instagram_business_account ||
-      !userData.instagram_business_account.id
-    ) {
-      console.error("Instagram business account not found", userData);
+    if (!pagesData.data || pagesData.data.length === 0) {
       return NextResponse.json(
         {
           error:
-            "Instagram business account not found or not properly configured",
-          details: JSON.stringify(userData),
+            "No Facebook Pages found. Make sure your Instagram account is linked to a Facebook Page.",
+          details: JSON.stringify(pagesData),
         },
         { status: 500 },
       );
     }
 
-    const igUserId = userData.instagram_business_account.id;
+    // Get the first page
+    const page = pagesData.data[0];
+    const pageId = page.id;
+    const pageAccessToken = page.access_token;
+
+    // Get the Instagram business account linked to this page
+    const igAccountRes = await fetch(
+      `https://graph.facebook.com/v18.0/${pageId}?fields=instagram_business_account&access_token=${pageAccessToken}`,
+    );
+
+    if (!igAccountRes.ok) {
+      const igError = await igAccountRes.text();
+      console.error("Failed to get Instagram business account:", igError);
+      return NextResponse.json(
+        {
+          error:
+            "Failed to get Instagram business account. Make sure your Facebook Page is linked to an Instagram Professional account.",
+          details: igError,
+        },
+        { status: 500 },
+      );
+    }
+
+    const igAccountData = await igAccountRes.json();
+    console.log(
+      "Instagram business account data:",
+      JSON.stringify(igAccountData, null, 2),
+    );
+
+    if (
+      !igAccountData.instagram_business_account ||
+      !igAccountData.instagram_business_account.id
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "No Instagram business account found linked to your Facebook Page.",
+          details: JSON.stringify(igAccountData),
+        },
+        { status: 500 },
+      );
+    }
+
+    const igUserId = igAccountData.instagram_business_account.id;
     console.log("Using Instagram Business Account ID:", igUserId);
 
     // Step 1: Create a media container
     console.log("Creating Instagram media container with video URL:", mediaUrl);
     const containerParams = new URLSearchParams({
-      access_token: instagramAccount.access_token,
+      access_token: pageAccessToken, // Use page access token for publishing
       media_type: "REELS",
       video_url: mediaUrl,
       caption: caption,
@@ -140,7 +236,7 @@ export async function POST(request: Request) {
 
     while (retryCount < maxRetries) {
       const statusRes = await fetch(
-        `https://graph.facebook.com/v18.0/${containerId}?fields=status_code&access_token=${instagramAccount.access_token}`,
+        `https://graph.facebook.com/v18.0/${containerId}?fields=status_code&access_token=${pageAccessToken}`,
       );
 
       if (!statusRes.ok) {
@@ -182,7 +278,7 @@ export async function POST(request: Request) {
     // Step 2: Publish the container
     console.log("Publishing Instagram media container:", containerId);
     const publishParams = new URLSearchParams({
-      access_token: instagramAccount.access_token,
+      access_token: pageAccessToken, // Use page access token for publishing
       creation_id: containerId,
     });
 
