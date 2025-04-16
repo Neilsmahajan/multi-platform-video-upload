@@ -58,151 +58,152 @@ export async function POST(request: Request) {
 
     console.log("Found Instagram account with access token");
 
-    // Get app credentials from environment variables
-    const appId = process.env.AUTH_INSTAGRAM_ID;
-    const appSecret = process.env.AUTH_INSTAGRAM_SECRET;
-
-    if (!appId || !appSecret) {
-      console.error("Missing Instagram app credentials");
-      return NextResponse.json(
-        { error: "Server configuration error - missing Instagram credentials" },
-        { status: 500 },
-      );
-    }
-
-    // Exchange short-lived token for a long-lived token if not already done
-    // Note: If your token is already long-lived, you can skip this step
-    let accessToken = instagramAccount.access_token;
+    // Try to determine if this is a Facebook token or an Instagram direct token
+    const accessToken = instagramAccount.access_token;
+    let igBusinessAccountId;
+    let pageAccessToken;
 
     try {
-      console.log("Converting to long-lived token...");
-      const exchangeResponse = await fetch(
-        `https://graph.facebook.com/v18.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${accessToken}`,
+      // Try direct Instagram Graph API approach first
+      console.log("Trying direct Instagram API access");
+      const igUserRes = await fetch(
+        `https://graph.instagram.com/me?fields=id,username&access_token=${accessToken}`,
       );
 
-      if (exchangeResponse.ok) {
-        const exchangeData = await exchangeResponse.json();
-        accessToken = exchangeData.access_token;
-        console.log("Successfully obtained long-lived token");
+      if (igUserRes.ok) {
+        const igUserData = await igUserRes.json();
+        console.log("Instagram user data:", igUserData);
 
-        // Update the token in database for future use
-        await prisma.account.update({
-          where: { id: instagramAccount.id },
-          data: { access_token: accessToken },
-        });
-      } else {
-        const errorText = await exchangeResponse.text();
-        console.log("Could not exchange for long-lived token:", errorText);
-        // Continue with original token as fallback
+        // Get long-lived Instagram User token (may already be long-lived)
+        console.log("Getting long-lived Instagram user token");
+        const longLivedTokenRes = await fetch(
+          `https://graph.instagram.com/access_token?grant_type=ig_exchange_token&client_secret=${process.env.AUTH_INSTAGRAM_SECRET}&access_token=${accessToken}`,
+        );
+
+        if (longLivedTokenRes.ok) {
+          const tokenData = await longLivedTokenRes.json();
+          console.log("Long-lived token response:", tokenData);
+
+          // Store the refreshed token
+          if (tokenData.access_token) {
+            await prisma.account.update({
+              where: { id: instagramAccount.id },
+              data: { access_token: tokenData.access_token },
+            });
+            console.log("Updated Instagram token in database");
+          }
+        }
+
+        // Unfortunately, direct Instagram API tokens can't be used for content publishing
+        // We need to show a clear error message
+        return NextResponse.json(
+          {
+            error: "Instagram Business Account Required",
+            details:
+              "To publish videos, you need to use an Instagram Business Account connected to a Facebook Page. Your current Instagram account doesn't have the proper permissions for publishing content.",
+          },
+          { status: 403 },
+        );
       }
-    } catch (tokenError) {
-      console.error("Error exchanging token:", tokenError);
-      // Continue with original token as fallback
-    }
 
-    // Debug token to check its validity and associated permissions
-    console.log("Checking token information...");
-    const debugResponse = await fetch(
-      `https://graph.facebook.com/debug_token?input_token=${accessToken}&access_token=${accessToken}`,
-    );
+      // If the direct Instagram approach failed, try using the Facebook Graph API
+      console.log(
+        "Using Facebook Graph API to find Instagram Business Account",
+      );
 
-    if (debugResponse.ok) {
-      const debugData = await debugResponse.json();
-      console.log("Token debug info:", JSON.stringify(debugData, null, 2));
-    } else {
-      console.log("Could not debug token");
-    }
+      // Try to get the user's Facebook Pages using the access token
+      const pagesRes = await fetch(
+        `https://graph.facebook.com/v18.0/me/accounts?fields=id,name,access_token,instagram_business_account{id,name,username}&access_token=${accessToken}`,
+      );
 
-    // Get the Instagram business account ID
-    console.log("Fetching Instagram business account ID");
-    const userRes = await fetch(
-      `https://graph.facebook.com/v18.0/me/accounts?access_token=${accessToken}`,
-    );
+      const pagesDataText = await pagesRes.text();
+      console.log("Facebook Pages raw response:", pagesDataText);
 
-    if (!userRes.ok) {
-      const userError = await userRes.text();
-      console.error("Failed to get Facebook Pages:", userError);
+      if (!pagesRes.ok) {
+        throw new Error(`Failed to get Facebook Pages: ${pagesDataText}`);
+      }
+
+      try {
+        const pagesData = JSON.parse(pagesDataText);
+
+        if (!pagesData.data || pagesData.data.length === 0) {
+          return NextResponse.json(
+            {
+              error: "No Facebook Pages Found",
+              details:
+                "Your Facebook account doesn't have any Pages, or your app doesn't have permission to access them. You need a Facebook Page connected to an Instagram Business Account to publish videos.",
+            },
+            { status: 403 },
+          );
+        }
+
+        // Find the first page with an Instagram Business Account
+        let pageWithIG = null;
+        for (const page of pagesData.data) {
+          if (page.instagram_business_account) {
+            pageWithIG = page;
+            break;
+          }
+        }
+
+        if (!pageWithIG) {
+          return NextResponse.json(
+            {
+              error: "No Instagram Business Account Found",
+              details:
+                "None of your Facebook Pages are connected to an Instagram Business Account. Please connect an Instagram Business Account to one of your Facebook Pages.",
+            },
+            { status: 403 },
+          );
+        }
+
+        igBusinessAccountId = pageWithIG.instagram_business_account.id;
+        pageAccessToken = pageWithIG.access_token;
+
+        console.log("Found Instagram Business Account:", igBusinessAccountId);
+        console.log("Using Page Access Token for publishing");
+      } catch (parseError) {
+        console.error("Error parsing Pages response:", parseError);
+        throw new Error(
+          `Failed to parse Facebook Pages response: ${pagesDataText}`,
+        );
+      }
+    } catch (authError) {
+      console.error("Authentication error:", authError);
+
       return NextResponse.json(
         {
-          error:
-            "Failed to get Facebook Pages. Make sure your Instagram account is a Professional account linked to a Facebook Page.",
-          details: userError,
+          error: "Instagram Authentication Failed",
+          details:
+            "There was an error authenticating with Instagram. Please ensure your account is properly connected and your Instagram account is a Professional account (Business or Creator) linked to a Facebook Page.",
+        },
+        { status: 401 },
+      );
+    }
+
+    if (!igBusinessAccountId || !pageAccessToken) {
+      return NextResponse.json(
+        {
+          error: "Invalid Instagram Configuration",
+          details:
+            "Could not find a valid Instagram Business Account ID or Page Access Token. Please check your Instagram account setup.",
         },
         { status: 500 },
       );
     }
 
-    const pagesData = await userRes.json();
-    console.log("Facebook Pages data:", JSON.stringify(pagesData, null, 2));
-
-    if (!pagesData.data || pagesData.data.length === 0) {
-      return NextResponse.json(
-        {
-          error:
-            "No Facebook Pages found. Make sure your Instagram account is linked to a Facebook Page.",
-          details: JSON.stringify(pagesData),
-        },
-        { status: 500 },
-      );
-    }
-
-    // Get the first page
-    const page = pagesData.data[0];
-    const pageId = page.id;
-    const pageAccessToken = page.access_token;
-
-    // Get the Instagram business account linked to this page
-    const igAccountRes = await fetch(
-      `https://graph.facebook.com/v18.0/${pageId}?fields=instagram_business_account&access_token=${pageAccessToken}`,
-    );
-
-    if (!igAccountRes.ok) {
-      const igError = await igAccountRes.text();
-      console.error("Failed to get Instagram business account:", igError);
-      return NextResponse.json(
-        {
-          error:
-            "Failed to get Instagram business account. Make sure your Facebook Page is linked to an Instagram Professional account.",
-          details: igError,
-        },
-        { status: 500 },
-      );
-    }
-
-    const igAccountData = await igAccountRes.json();
-    console.log(
-      "Instagram business account data:",
-      JSON.stringify(igAccountData, null, 2),
-    );
-
-    if (
-      !igAccountData.instagram_business_account ||
-      !igAccountData.instagram_business_account.id
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "No Instagram business account found linked to your Facebook Page.",
-          details: JSON.stringify(igAccountData),
-        },
-        { status: 500 },
-      );
-    }
-
-    const igUserId = igAccountData.instagram_business_account.id;
-    console.log("Using Instagram Business Account ID:", igUserId);
-
+    // Now we have a valid Instagram Business Account ID and Page Access Token
     // Step 1: Create a media container
     console.log("Creating Instagram media container with video URL:", mediaUrl);
     const containerParams = new URLSearchParams({
-      access_token: pageAccessToken, // Use page access token for publishing
+      access_token: pageAccessToken,
       media_type: "REELS",
       video_url: mediaUrl,
       caption: caption,
     });
 
     const createContainerRes = await fetch(
-      `https://graph.facebook.com/v18.0/${igUserId}/media`,
+      `https://graph.facebook.com/v18.0/${igBusinessAccountId}/media`,
       {
         method: "POST",
         headers: {
@@ -278,12 +279,12 @@ export async function POST(request: Request) {
     // Step 2: Publish the container
     console.log("Publishing Instagram media container:", containerId);
     const publishParams = new URLSearchParams({
-      access_token: pageAccessToken, // Use page access token for publishing
+      access_token: pageAccessToken,
       creation_id: containerId,
     });
 
     const publishRes = await fetch(
-      `https://graph.facebook.com/v18.0/${igUserId}/media_publish`,
+      `https://graph.facebook.com/v18.0/${igBusinessAccountId}/media_publish`,
       {
         method: "POST",
         headers: {
