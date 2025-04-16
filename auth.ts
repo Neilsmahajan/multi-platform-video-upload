@@ -26,6 +26,60 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       client: {
         token_endpoint_auth_method: "client_secret_post",
       },
+      async [customFetch](
+        input: RequestInfo | URL,
+        init?: RequestInit,
+      ): Promise<Response> {
+        const url = new URL(
+          input instanceof Request ? input.url : input.toString(),
+        );
+
+        // Handle the token endpoint specially
+        if (url.pathname.endsWith("/oauth/access_token")) {
+          const customHeaders = {
+            ...init?.headers,
+            "content-type": "application/x-www-form-urlencoded",
+          };
+
+          // Create a proper form body with all required parameters
+          const formData = new URLSearchParams();
+
+          if (init?.body) {
+            // Parse existing body if it exists
+            const existingBody = new URLSearchParams(init.body as string);
+
+            // Add each parameter from existing body
+            for (const [key, value] of existingBody.entries()) {
+              formData.append(key, value);
+            }
+          }
+
+          // Make sure client_id and client_secret are included
+          if (!formData.has("client_id")) {
+            formData.append("client_id", process.env.AUTH_INSTAGRAM_ID!);
+          }
+
+          if (!formData.has("client_secret")) {
+            formData.append(
+              "client_secret",
+              process.env.AUTH_INSTAGRAM_SECRET!,
+            );
+          }
+
+          // Make the request with the properly formatted body
+          const response = await fetch(url, {
+            ...init,
+            method: "POST",
+            headers: customHeaders,
+            body: formData.toString(),
+          });
+
+          const data = await response.json();
+          return Response.json(data);
+        }
+
+        return fetch(input, init);
+      },
       authorization: {
         url: "https://www.instagram.com/oauth/authorize",
         params: {
@@ -39,7 +93,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         "https://graph.instagram.com/me?fields=id,username,account_type,name",
       profile(profile) {
         return {
-          id: profile.id,
+          id: profile.id || profile.user_id,
           name: profile.username || profile.name,
           email: null, // Instagram doesn't provide email
           image: null,
