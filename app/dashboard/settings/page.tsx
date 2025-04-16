@@ -26,6 +26,7 @@ export const metadata: Metadata = {
 export default async function SettingsPage() {
   const session = await auth();
   let tiktokConnected = false;
+  let instagramConnected = false;
 
   if (session) {
     // Query for a TikTok account associated with the user
@@ -33,6 +34,12 @@ export default async function SettingsPage() {
       where: { userId: session.user.id, provider: "tiktok" },
     });
     tiktokConnected = !!tiktokAccount;
+
+    // Query for an Instagram account associated with the user
+    const instagramAccount = await prisma.account.findFirst({
+      where: { userId: session.user.id, provider: "instagram" },
+    });
+    instagramConnected = !!instagramAccount;
   }
 
   return (
@@ -99,12 +106,16 @@ export default async function SettingsPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="p-4 rounded-lg bg-gray-50 border border-gray-200">
-                    <p className="text-gray-800 font-medium">Not connected</p>
+                    <p className="text-gray-800 font-medium">
+                      {instagramConnected ? "Connected" : "Not connected"}
+                    </p>
                     <p className="text-gray-700 text-sm mt-1">
-                      Connect your Instagram account to post Reels
+                      {instagramConnected
+                        ? "Your Instagram account is ready to post Reels"
+                        : "Connect your Instagram account to post Reels"}
                     </p>
                   </div>
-                  <InstagramConnect instagramConnected={false} />
+                  <InstagramConnect instagramConnected={instagramConnected} />
                 </CardContent>
               </Card>
 
