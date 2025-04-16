@@ -41,43 +41,57 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
             "content-type": "application/x-www-form-urlencoded",
           };
 
-          // Create a proper form body with all required parameters
-          const formData = new URLSearchParams();
+          // Create form data for the request
+          const body = new URLSearchParams();
 
+          // If there's a body, parse it and add its entries to our form data
           if (init?.body) {
-            // Parse existing body if it exists
-            const existingBody = new URLSearchParams(init.body as string);
-
-            // Add each parameter from existing body
-            for (const [key, value] of existingBody.entries()) {
-              formData.append(key, value);
+            const formData = new URLSearchParams(init.body as string);
+            for (const [key, value] of formData.entries()) {
+              body.append(key, value);
             }
           }
 
-          // Make sure client_id and client_secret are included
-          if (!formData.has("client_id")) {
-            formData.append("client_id", process.env.AUTH_INSTAGRAM_ID!);
-          }
+          // Ensure client_id and client_secret are included
+          body.append("client_id", process.env.AUTH_INSTAGRAM_ID!);
+          body.append("client_secret", process.env.AUTH_INSTAGRAM_SECRET!);
 
-          if (!formData.has("client_secret")) {
-            formData.append(
-              "client_secret",
-              process.env.AUTH_INSTAGRAM_SECRET!,
+          try {
+            const response = await fetch(url, {
+              ...init,
+              method: "POST",
+              headers: customHeaders,
+              body: body.toString(),
+            });
+
+            // Instagram returns a non-standard format for the token response
+            const data = await response.json();
+
+            // Transform to standard OAuth format expected by NextAuth
+            const transformedData = {
+              access_token: data.access_token,
+              token_type: "bearer",
+              scope:
+                "instagram_business_basic,instagram_business_content_publish",
+              id_token: null,
+              expires_at: Math.floor(Date.now() / 1000) + 3600, // Assume 1-hour expiry
+              refresh_token: null,
+            };
+
+            return Response.json(transformedData);
+          } catch (error) {
+            console.error("Instagram token exchange error:", error);
+            return new Response(
+              JSON.stringify({ error: "Failed to exchange token" }),
+              {
+                status: 400,
+                headers: { "Content-Type": "application/json" },
+              },
             );
           }
-
-          // Make the request with the properly formatted body
-          const response = await fetch(url, {
-            ...init,
-            method: "POST",
-            headers: customHeaders,
-            body: formData.toString(),
-          });
-
-          const data = await response.json();
-          return Response.json(data);
         }
 
+        // Default handling for other requests
         return fetch(input, init);
       },
       authorization: {

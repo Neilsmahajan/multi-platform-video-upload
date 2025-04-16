@@ -18,21 +18,37 @@ export default function InstagramConnect({
 
   const handleConnect = async () => {
     setLoading(true);
+
+    // Clear any previous errors
+    setError(null);
+
     try {
+      // Use callbackUrl as the current URL and force redirect
+      // to handle the OAuth flow properly
       await signIn("instagram", {
         callbackUrl: window.location.href,
         redirect: true,
       });
+
+      // Note: The page will redirect, so the code below won't run
+      // unless there's an error in the signIn function itself
     } catch (err) {
       console.error("Instagram auth error:", err);
-      setError("Failed to connect to Instagram");
+      setError("Failed to connect to Instagram. Please try again.");
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleDisconnect = async () => {
-    // Redirect to an API route for disconnect when implemented
-    router.push("/api/auth/disconnect/instagram");
+    setLoading(true);
+    try {
+      // Redirect to an API route for disconnect
+      router.push("/api/auth/disconnect/instagram");
+    } catch (err) {
+      console.error("Instagram disconnect error:", err);
+      setError("Failed to disconnect Instagram account");
+      setLoading(false);
+    }
   };
 
   return (
