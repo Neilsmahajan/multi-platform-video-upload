@@ -1,7 +1,5 @@
 import NextAuth from "next-auth";
 import Google from "next-auth/providers/google";
-import Instagram from "next-auth/providers/instagram";
-// import TikTok from "next-auth/providers/tiktok";
 import { prisma } from "@/lib/prisma";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { customFetch } from "next-auth";
@@ -21,7 +19,33 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         },
       },
     }),
-    Instagram,
+    {
+      id: "instagram",
+      name: "Instagram",
+      type: "oauth",
+      client: {
+        token_endpoint_auth_method: "client_secret_post",
+      },
+      authorization: {
+        url: "https://www.instagram.com/oauth/authorize",
+        params: {
+          client_id: process.env.AUTH_INSTAGRAM_ID,
+          scope: "instagram_business_basic,instagram_business_content_publish",
+          response_type: "code",
+        },
+      },
+      token: "https://api.instagram.com/oauth/access_token",
+      userinfo:
+        "https://graph.instagram.com/me?fields=id,username,account_type,name",
+      profile(profile) {
+        return {
+          id: profile.id,
+          name: profile.username || profile.name,
+          email: null, // Instagram doesn't provide email
+          image: null,
+        };
+      },
+    },
     {
       id: "tiktok",
       name: "TikTok",
