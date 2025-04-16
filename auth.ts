@@ -23,9 +23,11 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       id: "instagram",
       name: "Instagram",
       type: "oauth",
+      wellKnown: undefined,
       client: {
         token_endpoint_auth_method: "client_secret_post",
       },
+      checks: ["state"],
       async [customFetch](
         input: RequestInfo | URL,
         init?: RequestInit,
@@ -34,59 +36,102 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           input instanceof Request ? input.url : input.toString(),
         );
 
-        // Handle the token endpoint specially
+        // Add debug logs
+        console.log("Instagram OAuth URL:", url.toString());
+
+        // Handle the token endpoint
         if (url.pathname.endsWith("/oauth/access_token")) {
-          const customHeaders = {
-            ...init?.headers,
-            "content-type": "application/x-www-form-urlencoded",
-          };
+          console.log("Processing Instagram token exchange");
 
-          // Create form data for the request
-          const body = new URLSearchParams();
+          const formData = new URLSearchParams();
 
-          // If there's a body, parse it and add its entries to our form data
+          // Parse the body if it exists
           if (init?.body) {
-            const formData = new URLSearchParams(init.body as string);
-            for (const [key, value] of formData.entries()) {
-              body.append(key, value);
+            const bodyParams = new URLSearchParams(init.body as string);
+            for (const [key, value] of bodyParams.entries()) {
+              formData.append(key, value);
             }
           }
 
-          // Ensure client_id and client_secret are included
-          body.append("client_id", process.env.AUTH_INSTAGRAM_ID!);
-          body.append("client_secret", process.env.AUTH_INSTAGRAM_SECRET!);
+          // Ensure required params are included
+          formData.append("client_id", process.env.AUTH_INSTAGRAM_ID!);
+          formData.append("client_secret", process.env.AUTH_INSTAGRAM_SECRET!);
 
           try {
+            console.log(
+              "Instagram token request params:",
+              Object.fromEntries(formData.entries()),
+            );
+
             const response = await fetch(url, {
-              ...init,
               method: "POST",
-              headers: customHeaders,
-              body: body.toString(),
+              headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+              },
+              body: formData.toString(),
             });
 
-            // Instagram returns response in a different format than OAuth 2.0 expects
-            const data = await response.json();
+            if (!response.ok) {
+              const errorText = await response.text();
+              console.error("Instagram token error response:", errorText);
+              return new Response(
+                JSON.stringify({ error: "Token endpoint error" }),
+                {
+                  status: response.status,
+                  headers: { "Content-Type": "application/json" },
+                },
+              );
+            }
 
-            // Auth.js expects a standard OAuth response format
+            const data = await response.json();
+            console.log("Instagram raw token response:", data);
+
+            // Transform Instagram's response to the format Auth.js expects
             const transformedData = {
               access_token: data.access_token,
-              token_type: "bearer",
-              expires_in: 3600, // Default to 1 hour
-              refresh_token: null,
+              token_type: "Bearer",
               scope:
                 "instagram_business_basic,instagram_business_content_publish",
             };
 
+            console.log("Transformed token data:", transformedData);
             return Response.json(transformedData);
           } catch (error) {
             console.error("Instagram token exchange error:", error);
             return new Response(
               JSON.stringify({ error: "Failed to exchange token" }),
               {
-                status: 400,
+                status: 500,
                 headers: { "Content-Type": "application/json" },
               },
             );
+          }
+        }
+
+        // For userinfo endpoint, make sure to append the access token
+        if (url.pathname.includes("/graph.instagram.com/me")) {
+          const accessToken =
+            (init?.headers &&
+            typeof init.headers === "object" &&
+            "Authorization" in init.headers
+              ? (init.headers as Record<string, string>)["Authorization"]
+              : init?.headers instanceof Headers
+                ? init.headers.get("Authorization")
+                : undefined
+            )
+              ?.toString()
+              ?.replace("Bearer ", "") ||
+            new URLSearchParams(url.search).get("access_token");
+
+          if (accessToken) {
+            url.searchParams.set("access_token", accessToken);
+            console.log("Fetching Instagram user info:", url.toString());
+            return fetch(url.toString(), {
+              method: "GET",
+              headers: {
+                Accept: "application/json",
+              },
+            });
           }
         }
 
@@ -105,10 +150,11 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       userinfo:
         "https://graph.instagram.com/me?fields=id,username,account_type,name",
       profile(profile) {
+        console.log("Instagram profile data:", profile);
         return {
           id: profile.id,
           name: profile.username || profile.name,
-          email: null, // Instagram doesn't provide email
+          email: null,
           image: null,
         };
       },
