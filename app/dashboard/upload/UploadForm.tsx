@@ -92,8 +92,12 @@ export default function UploadForm({
         handleUploadUrl: "/api/video/uploadBlob",
       });
 
+      // Track successful uploads
+      let youtubeSuccess = false;
+      let instagramSuccess = false;
+
       // Call YouTube upload endpoint with blob URL and metadata
-      const res = await fetch("/api/youtube/upload", {
+      const youtubeRes = await fetch("/api/youtube/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -103,10 +107,49 @@ export default function UploadForm({
           privacyStatus,
         }),
       });
-      const data = await res.json();
-      if (res.ok && data.videoId) {
+      const youtubeData = await youtubeRes.json();
+      youtubeSuccess = youtubeRes.ok && youtubeData.videoId;
+
+      // If Instagram is connected, also upload to Instagram
+      if (instagramConnected) {
+        try {
+          // Fetch user's Instagram business account ID from the session
+          const userDataRes = await fetch("/api/auth/user-data", {
+            method: "GET",
+          });
+          const userData = await userDataRes.json();
+
+          if (userData.instagramUserId) {
+            // Call Instagram upload endpoint
+            const instagramRes = await fetch("/api/instagram/upload", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                igUserId: userData.instagramUserId,
+                mediaUrl: blobResult.url,
+                caption: description || title,
+                // Optional alt text can be added here
+              }),
+            });
+
+            const instagramData = await instagramRes.json();
+            instagramSuccess = instagramRes.ok && instagramData.mediaId;
+
+            if (!instagramSuccess) {
+              console.error("Instagram upload failed:", instagramData);
+            }
+          } else {
+            console.error("Missing Instagram user ID");
+          }
+        } catch (instagramError) {
+          console.error("Error uploading to Instagram:", instagramError);
+        }
+      }
+
+      // Set upload status based on results
+      if (youtubeSuccess || instagramSuccess) {
         setUploadStatus("success");
-        // Optionally clear file and fields
+        // Clear form fields
         setFile(null);
         setTitle("");
         setDescription("");
