@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { upload } from "@vercel/blob/client";
 import { useSession } from "next-auth/react";
 import { signIn } from "next-auth/react";
@@ -24,8 +24,16 @@ import {
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
-export default function UploadForm() {
-  const { data: session, status } = useSession();
+interface UploadFormProps {
+  initialInstagramConnected: boolean;
+  initialTiktokConnected: boolean;
+}
+
+export default function UploadForm({
+  initialInstagramConnected,
+  initialTiktokConnected,
+}: UploadFormProps) {
+  const { status } = useSession();
   const router = useRouter();
 
   const [file, setFile] = useState<File | null>(null);
@@ -37,33 +45,10 @@ export default function UploadForm() {
   const [description, setDescription] = useState("");
   const [privacyStatus] = useState("private"); // fixed value for now
 
-  // Add state for platform connections
-  const [instagramConnected, setInstagramConnected] = useState(false);
-  const [tiktokConnected, setTiktokConnected] = useState(false);
+  // Initialize connection state from props
+  const [instagramConnected] = useState(initialInstagramConnected);
+  const [tiktokConnected] = useState(initialTiktokConnected);
   const [connecting, setConnecting] = useState(false);
-
-  // Check connection status when session is available
-  useEffect(() => {
-    async function checkConnections() {
-      if (session?.user?.id) {
-        try {
-          // Fetch connection status from API
-          const res = await fetch("/api/user/connections");
-          const data = await res.json();
-          if (res.ok) {
-            setInstagramConnected(data.instagramConnected);
-            setTiktokConnected(data.tiktokConnected);
-          }
-        } catch (error) {
-          console.error("Failed to check connections:", error);
-        }
-      }
-    }
-
-    if (status === "authenticated") {
-      checkConnections();
-    }
-  }, [session, status]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {

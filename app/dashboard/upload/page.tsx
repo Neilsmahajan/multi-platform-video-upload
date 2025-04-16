@@ -1,5 +1,7 @@
 import { Metadata } from "next";
 import UploadForm from "@/app/dashboard/upload/UploadForm";
+import { auth } from "@/auth";
+import { prisma } from "@/lib/prisma";
 
 export const metadata: Metadata = {
   title: "Upload Video",
@@ -7,7 +9,27 @@ export const metadata: Metadata = {
     "Upload videos to multiple social media platforms simultaneously",
 };
 
-export default function UploadPage() {
+export default async function UploadPage() {
+  const session = await auth();
+
+  // Default connection status
+  let instagramConnected = false;
+  let tiktokConnected = false;
+
+  if (session) {
+    // Check Instagram connection status
+    const instagramAccount = await prisma.account.findFirst({
+      where: { userId: session.user.id, provider: "instagram" },
+    });
+    instagramConnected = !!instagramAccount;
+
+    // Check TikTok connection status
+    const tiktokAccount = await prisma.account.findFirst({
+      where: { userId: session.user.id, provider: "tiktok" },
+    });
+    tiktokConnected = !!tiktokAccount;
+  }
+
   return (
     <>
       <div className="mb-6">
@@ -16,7 +38,10 @@ export default function UploadPage() {
           Upload once and publish to multiple platforms
         </p>
       </div>
-      <UploadForm />
+      <UploadForm
+        initialInstagramConnected={instagramConnected}
+        initialTiktokConnected={tiktokConnected}
+      />
     </>
   );
 }
