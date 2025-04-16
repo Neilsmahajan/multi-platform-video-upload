@@ -1,8 +1,11 @@
 "use client";
 
 import type React from "react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { upload } from "@vercel/blob/client";
+import { useSession } from "next-auth/react";
+import { signIn } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,6 +25,9 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export default function UploadForm() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<
@@ -31,9 +37,61 @@ export default function UploadForm() {
   const [description, setDescription] = useState("");
   const [privacyStatus] = useState("private"); // fixed value for now
 
+  // Add state for platform connections
+  const [instagramConnected, setInstagramConnected] = useState(false);
+  const [tiktokConnected, setTiktokConnected] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+
+  // Check connection status when session is available
+  useEffect(() => {
+    async function checkConnections() {
+      if (session?.user?.id) {
+        try {
+          // Fetch connection status from API
+          const res = await fetch("/api/user/connections");
+          const data = await res.json();
+          if (res.ok) {
+            setInstagramConnected(data.instagramConnected);
+            setTiktokConnected(data.tiktokConnected);
+          }
+        } catch (error) {
+          console.error("Failed to check connections:", error);
+        }
+      }
+    }
+
+    if (status === "authenticated") {
+      checkConnections();
+    }
+  }, [session, status]);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setFile(e.target.files[0]);
+    }
+  };
+
+  const handleInstagramConnection = (checked: boolean) => {
+    if (checked) {
+      setConnecting(true);
+      signIn("instagram", {
+        callbackUrl: window.location.href,
+        redirect: true,
+      });
+    } else {
+      router.push("/api/auth/disconnect/instagram");
+    }
+  };
+
+  const handleTikTokConnection = (checked: boolean) => {
+    if (checked) {
+      setConnecting(true);
+      signIn("tiktok", {
+        callbackUrl: window.location.href,
+        redirect: true,
+      });
+    } else {
+      router.push("/api/auth/disconnect/tiktok");
     }
   };
 
@@ -231,40 +289,6 @@ export default function UploadForm() {
                   </div>
 
                   <Separator />
-
-                  {/* <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="youtube-title">Title</Label>
-                      <Input
-                        id="youtube-title"
-                        placeholder="Enter YouTube title"
-                      />
-                      <p className="text-xs text-gray-500">
-                        Max 100 characters
-                      </p>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="youtube-description">Description</Label>
-                      <Textarea
-                        id="youtube-description"
-                        placeholder="Enter YouTube description"
-                        className="min-h-[120px]"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="youtube-tags">
-                        Tags (comma separated)
-                      </Label>
-                      <Input id="youtube-tags" placeholder="tag1, tag2, tag3" />
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <Switch id="youtube-comments" defaultChecked />
-                      <Label htmlFor="youtube-comments">Allow comments</Label>
-                    </div>
-                  </div> */}
                 </TabsContent>
 
                 <TabsContent value="instagram" className="space-y-4">
@@ -274,23 +298,45 @@ export default function UploadForm() {
                       <span className="font-medium">Instagram Reels</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm text-red-600 font-medium">
-                        Not Connected
+                      <span
+                        className={`text-sm font-medium ${
+                          instagramConnected ? "text-green-600" : "text-red-600"
+                        }`}
+                      >
+                        {instagramConnected ? "Connected" : "Not Connected"}
                       </span>
-                      <Switch id="instagram-publish" disabled />
+                      <Switch
+                        id="instagram-publish"
+                        disabled={connecting || status !== "authenticated"}
+                        checked={instagramConnected}
+                        onCheckedChange={handleInstagramConnection}
+                      />
                     </div>
                   </div>
 
-                  <Alert className="bg-amber-50 border-amber-200">
-                    <AlertCircle className="h-4 w-4 text-amber-600" />
-                    <AlertTitle className="text-amber-800">
-                      Account Not Connected
-                    </AlertTitle>
-                    <AlertDescription className="text-amber-700">
-                      Please connect your Instagram account in the dashboard to
-                      enable posting to Reels.
-                    </AlertDescription>
-                  </Alert>
+                  {instagramConnected ? (
+                    <Alert className="bg-green-50 border-green-200">
+                      <CheckCircle2 className="h-4 w-4 text-green-600" />
+                      <AlertTitle className="text-green-800">
+                        Account Connected
+                      </AlertTitle>
+                      <AlertDescription className="text-green-700">
+                        Your Instagram account is connected and ready to post
+                        Reels. Toggle the switch to disconnect your account.
+                      </AlertDescription>
+                    </Alert>
+                  ) : (
+                    <Alert className="bg-amber-50 border-amber-200">
+                      <AlertCircle className="h-4 w-4 text-amber-600" />
+                      <AlertTitle className="text-amber-800">
+                        Account Not Connected
+                      </AlertTitle>
+                      <AlertDescription className="text-amber-700">
+                        Toggle the switch to connect your Instagram account to
+                        enable posting to Reels.
+                      </AlertDescription>
+                    </Alert>
+                  )}
                 </TabsContent>
 
                 <TabsContent value="tiktok" className="space-y-4">
@@ -310,23 +356,45 @@ export default function UploadForm() {
                       <span className="font-medium">TikTok</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm text-red-600 font-medium">
-                        Not Connected
+                      <span
+                        className={`text-sm font-medium ${
+                          tiktokConnected ? "text-green-600" : "text-red-600"
+                        }`}
+                      >
+                        {tiktokConnected ? "Connected" : "Not Connected"}
                       </span>
-                      <Switch id="tiktok-publish" disabled />
+                      <Switch
+                        id="tiktok-publish"
+                        disabled={connecting || status !== "authenticated"}
+                        checked={tiktokConnected}
+                        onCheckedChange={handleTikTokConnection}
+                      />
                     </div>
                   </div>
 
-                  <Alert className="bg-amber-50 border-amber-200">
-                    <AlertCircle className="h-4 w-4 text-amber-600" />
-                    <AlertTitle className="text-amber-800">
-                      Account Not Connected
-                    </AlertTitle>
-                    <AlertDescription className="text-amber-700">
-                      Please connect your TikTok account in the dashboard to
-                      enable posting.
-                    </AlertDescription>
-                  </Alert>
+                  {tiktokConnected ? (
+                    <Alert className="bg-green-50 border-green-200">
+                      <CheckCircle2 className="h-4 w-4 text-green-600" />
+                      <AlertTitle className="text-green-800">
+                        Account Connected
+                      </AlertTitle>
+                      <AlertDescription className="text-green-700">
+                        Your TikTok account is connected and ready to post
+                        videos. Toggle the switch to disconnect your account.
+                      </AlertDescription>
+                    </Alert>
+                  ) : (
+                    <Alert className="bg-amber-50 border-amber-200">
+                      <AlertCircle className="h-4 w-4 text-amber-600" />
+                      <AlertTitle className="text-amber-800">
+                        Account Not Connected
+                      </AlertTitle>
+                      <AlertDescription className="text-amber-700">
+                        Toggle the switch to connect your TikTok account to
+                        enable posting.
+                      </AlertDescription>
+                    </Alert>
+                  )}
                 </TabsContent>
               </Tabs>
             </CardContent>
