@@ -265,13 +265,23 @@ export default function UploadForm({
                       <Youtube className="h-5 w-5 text-red-600" />
                       <span className="font-medium">YouTube Shorts</span>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div>
                       <span className="text-sm text-green-600 font-medium">
                         Connected
                       </span>
-                      <Switch defaultChecked id="youtube-publish" />
                     </div>
                   </div>
+
+                  <Alert className="bg-green-50 border-green-200">
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                    <AlertTitle className="text-green-800">
+                      Account Connected
+                    </AlertTitle>
+                    <AlertDescription className="text-green-700">
+                      Your YouTube account is connected through your Google
+                      login and ready to post Shorts.
+                    </AlertDescription>
+                  </Alert>
 
                   <Separator />
                 </TabsContent>
