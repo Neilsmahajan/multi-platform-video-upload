@@ -7,11 +7,19 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Youtube, Instagram, Shield, Bell } from "lucide-react";
+import {
+  Youtube,
+  Instagram,
+  Shield,
+  Bell,
+  AlertCircle,
+  CheckCircle2,
+} from "lucide-react";
 import DashboardAuthCheck from "@/components/DashboardAuthCheck";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
@@ -105,16 +113,29 @@ export default async function SettingsPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="p-4 rounded-lg bg-gray-50 border border-gray-200">
-                    <p className="text-gray-800 font-medium">
-                      {instagramConnected ? "Connected" : "Not connected"}
-                    </p>
-                    <p className="text-gray-700 text-sm mt-1">
-                      {instagramConnected
-                        ? "Your Instagram account is ready to post Reels"
-                        : "Connect your Instagram account to post Reels"}
-                    </p>
-                  </div>
+                  {instagramConnected ? (
+                    <Alert className="bg-green-50 border-green-200">
+                      <CheckCircle2 className="h-4 w-4 text-green-600" />
+                      <AlertTitle className="text-green-800">
+                        Account Connected
+                      </AlertTitle>
+                      <AlertDescription className="text-green-700">
+                        Your Instagram account is connected and ready to post
+                        Reels.
+                      </AlertDescription>
+                    </Alert>
+                  ) : (
+                    <Alert className="bg-amber-50 border-amber-200">
+                      <AlertCircle className="h-4 w-4 text-amber-600" />
+                      <AlertTitle className="text-amber-800">
+                        Account Not Connected
+                      </AlertTitle>
+                      <AlertDescription className="text-amber-700">
+                        Connect your Instagram account to enable posting to
+                        Reels.
+                      </AlertDescription>
+                    </Alert>
+                  )}
                   <InstagramConnect instagramConnected={instagramConnected} />
                 </CardContent>
               </Card>
@@ -138,14 +159,28 @@ export default async function SettingsPage() {
                   <CardDescription>Connect your TikTok account</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="p-4 rounded-lg bg-gray-50 border border-gray-200">
-                    <p className="text-gray-800 font-medium">
-                      {tiktokConnected ? "Connected" : "Not connected"}
-                    </p>
-                    <p className="text-gray-700 text-sm mt-1">
-                      Connect your TikTok account to post videos
-                    </p>
-                  </div>
+                  {tiktokConnected ? (
+                    <Alert className="bg-green-50 border-green-200">
+                      <CheckCircle2 className="h-4 w-4 text-green-600" />
+                      <AlertTitle className="text-green-800">
+                        Account Connected
+                      </AlertTitle>
+                      <AlertDescription className="text-green-700">
+                        Your TikTok account is connected and ready to post
+                        videos.
+                      </AlertDescription>
+                    </Alert>
+                  ) : (
+                    <Alert className="bg-amber-50 border-amber-200">
+                      <AlertCircle className="h-4 w-4 text-amber-600" />
+                      <AlertTitle className="text-amber-800">
+                        Account Not Connected
+                      </AlertTitle>
+                      <AlertDescription className="text-amber-700">
+                        Connect your TikTok account to enable posting videos.
+                      </AlertDescription>
+                    </Alert>
+                  )}
                   <TikTokConnect tiktokConnected={tiktokConnected} />
                 </CardContent>
               </Card>
