@@ -34,6 +34,12 @@ export async function POST(request: Request) {
     }
 
     const accessToken = instagramAccount.access_token;
+    console.log("Instagram account data:", {
+      id: instagramAccount.id,
+      provider: instagramAccount.provider,
+      providerAccountId: instagramAccount.providerAccountId,
+      tokenLength: accessToken.length,
+    });
 
     // If igUserId is not provided, use the one from the account
     const instagramUserId = igUserId || instagramAccount.providerAccountId;
@@ -45,11 +51,42 @@ export async function POST(request: Request) {
       );
     }
 
+    // Check if token appears valid before attempting to use it
+    if (!accessToken.startsWith("IG")) {
+      console.warn("Warning: Instagram token does not start with 'IG' prefix");
+    }
+
+    // Perform a token validation check before proceeding
+    const validateTokenUrl = `https://graph.instagram.com/me?access_token=${accessToken}`;
+    try {
+      const validateRes = await fetch(validateTokenUrl);
+      const validateData = await validateRes.json();
+
+      if (!validateRes.ok) {
+        console.error("Token validation failed:", validateData);
+
+        // Try to refresh the token if it's expired
+        // Note: This would require implementing a token refresh mechanism
+
+        return NextResponse.json(
+          {
+            error: "Instagram token validation failed",
+            details: validateData,
+          },
+          { status: 401 },
+        );
+      }
+
+      console.log("Token validation successful:", validateData);
+    } catch (validateError) {
+      console.error("Error validating token:", validateError);
+    }
+
     // Step 1: Create Media Container
     const createContainerUrl = `https://graph.facebook.com/v22.0/${instagramUserId}/media`;
     const createParams = new URLSearchParams({
       access_token: accessToken,
-      video_url: mediaUrl, // for reels, use video_url
+      video_url: mediaUrl,
       caption: caption || "",
       media_type: "REELS", // Explicitly specify media type as REELS
     });
@@ -59,12 +96,24 @@ export async function POST(request: Request) {
     }
 
     console.log("Creating media container with URL:", createContainerUrl);
-    console.log("With params:", Object.fromEntries(createParams.entries()));
+    // Redact part of token for security in logs
+    const redactedParams = new URLSearchParams(createParams);
+    if (redactedParams.has("access_token")) {
+      const token = redactedParams.get("access_token") || "";
+      redactedParams.set(
+        "access_token",
+        token.substring(0, 10) + "..." + token.substring(token.length - 10),
+      );
+    }
+    console.log("With params:", Object.fromEntries(redactedParams.entries()));
 
     const createRes = await fetch(
       `${createContainerUrl}?${createParams.toString()}`,
       {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
       },
     );
 
@@ -73,6 +122,18 @@ export async function POST(request: Request) {
 
     if (!createRes.ok) {
       console.error("Error creating media container:", createData);
+
+      // Additional debug info for specific error codes
+      if (createData.error && createData.error.code === 190) {
+        console.error("Token issue detected - checking token details");
+        // Provide more info on permissions
+        const permDebug = await fetch(
+          `https://graph.facebook.com/debug_token?input_token=${accessToken}&access_token=${accessToken}`,
+        );
+        const permData = await permDebug.json();
+        console.log("Token debug info:", permData);
+      }
+
       return NextResponse.json(
         { error: "Failed to create media container", details: createData },
         { status: 500 },
@@ -89,12 +150,15 @@ export async function POST(request: Request) {
     });
 
     console.log("Publishing media with URL:", publishUrl);
-    console.log("With params:", Object.fromEntries(publishParams.entries()));
+    console.log("With creation_id:", creationId);
 
     const publishRes = await fetch(
       `${publishUrl}?${publishParams.toString()}`,
       {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
       },
     );
 
