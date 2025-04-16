@@ -66,25 +66,47 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
             );
           }
 
-          // Make the request with the properly formatted body
-          const response = await fetch(url, {
-            ...init,
-            method: "POST",
-            headers: customHeaders,
-            body: formData.toString(),
+          if (!formData.has("grant_type")) {
+            formData.append("grant_type", "authorization_code");
+          }
+
+          console.log("Instagram token request:", {
+            url: url.toString(),
+            body: Object.fromEntries(formData.entries()),
           });
 
-          const data = await response.json();
-          return Response.json(data);
+          try {
+            // Make the request with the properly formatted body
+            const response = await fetch(url, {
+              ...init,
+              method: "POST",
+              headers: customHeaders,
+              body: formData.toString(),
+            });
+
+            const data = await response.json();
+            console.log("Instagram token response:", data);
+
+            // Transform the response to match what Auth.js expects
+            return Response.json({
+              access_token: data.access_token,
+              token_type: "bearer",
+              expires_in: 3600,
+              user_id: data.user_id,
+            });
+          } catch (error) {
+            console.error("Instagram token exchange error:", error);
+            throw error;
+          }
         }
 
         return fetch(input, init);
       },
       authorization: {
-        url: "https://www.instagram.com/oauth/authorize",
+        url: "https://api.instagram.com/oauth/authorize",
         params: {
           client_id: process.env.AUTH_INSTAGRAM_ID,
-          scope: "instagram_business_basic,instagram_business_content_publish",
+          scope: "user_profile,user_media", // Use basic scopes for initial connection
           response_type: "code",
         },
       },
@@ -92,6 +114,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       userinfo:
         "https://graph.instagram.com/me?fields=id,username,account_type,name",
       profile(profile) {
+        console.log("Instagram profile data:", profile);
         return {
           id: profile.id || profile.user_id,
           name: profile.username || profile.name,
