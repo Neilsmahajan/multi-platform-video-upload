@@ -89,11 +89,12 @@ export async function POST(request: Request) {
     );
 
     // Create OAuth2 client using environment variables
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-    const redirectUri =
-      process.env.GOOGLE_REDIRECT_URI ||
-      "https://multiplatformvideoupload.com/api/auth/callback/google";
+    // Use AUTH_GOOGLE variables which are already set for authentication
+    const clientId = process.env.AUTH_GOOGLE_ID;
+    const clientSecret = process.env.AUTH_GOOGLE_SECRET;
+    const redirectUri = process.env.NEXTAUTH_URL
+      ? `${process.env.NEXTAUTH_URL}/api/auth/callback/google`
+      : "https://multiplatformvideoupload.com/api/auth/callback/google";
 
     if (!clientId || !clientSecret) {
       console.error("Missing YouTube OAuth credentials", {
@@ -106,7 +107,7 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log("Creating OAuth2 client");
+    console.log("Creating OAuth2 client with credentials");
     const oauth2Client = new OAuth2Client(clientId, clientSecret, redirectUri);
     oauth2Client.setCredentials({
       refresh_token: googleAccount.refresh_token,
