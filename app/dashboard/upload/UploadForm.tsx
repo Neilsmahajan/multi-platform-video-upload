@@ -44,6 +44,7 @@ export default function UploadForm({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [privacyStatus] = useState("private"); // fixed value for now
+  const [errorMessages, setErrorMessages] = useState<string[]>([]);
 
   // Initialize connection state from props
   const [instagramConnected] = useState(initialInstagramConnected);
@@ -85,12 +86,15 @@ export default function UploadForm({
     if (!file || !title) return;
     setIsUploading(true);
     setUploadStatus("idle");
+    setErrorMessages([]);
     try {
       // First, upload directly to Vercel Blob
+      console.log("Starting file upload to Vercel Blob");
       const blobResult = await upload(file.name, file, {
         access: "public",
         handleUploadUrl: "/api/video/uploadBlob",
       });
+      console.log("File uploaded to Vercel Blob successfully", blobResult);
 
       // Track successful uploads
       let youtubeSuccess = false;
@@ -99,6 +103,7 @@ export default function UploadForm({
 
       // Call YouTube upload endpoint with blob URL and metadata
       try {
+        console.log("Starting YouTube upload with blob URL:", blobResult.url);
         const youtubeRes = await fetch("/api/youtube/upload", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -112,10 +117,14 @@ export default function UploadForm({
         const youtubeData = await youtubeRes.json();
 
         if (youtubeRes.ok && youtubeData.videoId) {
+          console.log("YouTube upload successful:", youtubeData.videoId);
           youtubeSuccess = true;
         } else {
           console.error("YouTube upload failed:", youtubeData);
-          uploadErrors.push(`YouTube: ${youtubeData.error || "Unknown error"}`);
+          const errorMessage = youtubeData.details
+            ? `YouTube: ${youtubeData.error} - ${youtubeData.details}`
+            : `YouTube: ${youtubeData.error || "Unknown error"}`;
+          uploadErrors.push(errorMessage);
         }
       } catch (youtubeError) {
         console.error("Error in YouTube upload:", youtubeError);
@@ -168,11 +177,15 @@ export default function UploadForm({
         setDescription("");
       } else {
         setUploadStatus("error");
+        setErrorMessages(uploadErrors);
         console.error("Upload errors:", uploadErrors);
       }
     } catch (err) {
       console.error("Upload failed", err);
       setUploadStatus("error");
+      setErrorMessages([
+        `General error: ${err instanceof Error ? err.message : "Unknown error"}`,
+      ]);
     }
     setIsUploading(false);
   };
@@ -195,7 +208,14 @@ export default function UploadForm({
           <AlertCircle className="h-4 w-4 text-red-600" />
           <AlertTitle className="text-red-800">Upload Failed</AlertTitle>
           <AlertDescription className="text-red-700">
-            There was an error uploading your video. Please try again.
+            <p>There was an error uploading your video. Please try again.</p>
+            {errorMessages.length > 0 && (
+              <ul className="mt-2 list-disc list-inside">
+                {errorMessages.map((error, index) => (
+                  <li key={index}>{error}</li>
+                ))}
+              </ul>
+            )}
           </AlertDescription>
         </Alert>
       )}
