@@ -64,18 +64,17 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
               body: body.toString(),
             });
 
-            // Instagram returns a non-standard format for the token response
+            // Instagram returns response in a different format than OAuth 2.0 expects
             const data = await response.json();
 
-            // Transform to standard OAuth format expected by NextAuth
+            // Auth.js expects a standard OAuth response format
             const transformedData = {
               access_token: data.access_token,
               token_type: "bearer",
+              expires_in: 3600, // Default to 1 hour
+              refresh_token: null,
               scope:
                 "instagram_business_basic,instagram_business_content_publish",
-              id_token: null,
-              expires_at: Math.floor(Date.now() / 1000) + 3600, // Assume 1-hour expiry
-              refresh_token: null,
             };
 
             return Response.json(transformedData);
@@ -107,7 +106,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         "https://graph.instagram.com/me?fields=id,username,account_type,name",
       profile(profile) {
         return {
-          id: profile.id || profile.user_id,
+          id: profile.id,
           name: profile.username || profile.name,
           email: null, // Instagram doesn't provide email
           image: null,
