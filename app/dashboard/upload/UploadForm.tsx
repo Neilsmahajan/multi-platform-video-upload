@@ -219,26 +219,23 @@ export default function UploadForm({
               </ul>
             )}
 
-            {/* Display setup instructions for Instagram Business Account errors */}
+            {/* Display setup instructions for Instagram errors */}
             {errorMessages.some(
               (msg) =>
-                msg.includes("Instagram Business Account Required") ||
-                msg.includes("No Facebook Pages Found") ||
-                msg.includes("No Instagram Business Account Found"),
+                msg.includes("Instagram Professional Account Required") ||
+                msg.includes("Instagram Business Account Required"),
             ) && (
               <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md">
                 <h4 className="font-medium text-amber-800 mb-2">
-                  Instagram Business Account Setup Required
+                  Instagram Professional Account Required
                 </h4>
                 <p className="text-amber-700 mb-2">
-                  To publish videos to Instagram, you need to have:
+                  To publish videos to Instagram, you need:
                 </p>
                 <ol className="list-decimal list-inside text-amber-700">
                   <li>
                     An Instagram Professional account (Business or Creator)
                   </li>
-                  <li>Connected to a Facebook Page</li>
-                  <li>Proper permissions granted to this app</li>
                 </ol>
                 <a
                   href="https://help.instagram.com/502981923235522"
@@ -246,7 +243,7 @@ export default function UploadForm({
                   rel="noopener noreferrer"
                   className="text-blue-600 hover:underline mt-2 inline-block"
                 >
-                  Learn how to set up your Instagram Business account
+                  Learn how to convert to a Professional account
                 </a>
               </div>
             )}
@@ -447,7 +444,7 @@ export default function UploadForm({
                       <div className="mt-2 text-amber-600 text-sm">
                         <strong>Note:</strong> For publishing videos, your
                         Instagram account must be a Professional account
-                        (Business or Creator) and connected to a Facebook Page.
+                        (Business or Creator).
                       </div>
                     </AlertDescription>
                   </Alert>

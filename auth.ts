@@ -91,7 +91,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
               access_token: data.access_token,
               token_type: "Bearer",
               scope:
-                "instagram_business_basic,instagram_business_content_publish",
+                "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments,instagram_business_manage_messages",
             };
 
             console.log("Transformed token data:", transformedData);
@@ -142,7 +142,8 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         url: "https://www.instagram.com/oauth/authorize",
         params: {
           client_id: process.env.AUTH_INSTAGRAM_ID,
-          scope: "instagram_business_basic,instagram_business_content_publish",
+          scope:
+            "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments,instagram_business_manage_messages",
           response_type: "code",
         },
       },

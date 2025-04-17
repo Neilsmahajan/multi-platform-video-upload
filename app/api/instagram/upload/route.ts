@@ -94,95 +94,30 @@ export async function POST(request: Request) {
           }
         }
 
-        // Unfortunately, direct Instagram API tokens can't be used for content publishing
-        // We need to show a clear error message
+        // Now use the token to upload with direct Instagram API instead of returning an error
+        const userId = igUserData.id;
+        console.log("Using direct Instagram API with user ID:", userId);
+        pageAccessToken = instagramAccount.access_token;
+        igBusinessAccountId = userId;
+
+        // Continue with direct Instagram API for content publishing
+      } else {
+        // If direct Instagram approach failed, return a helpful error
+        console.error("Direct Instagram API access failed");
         return NextResponse.json(
           {
-            error: "Instagram Business Account Required",
+            error: "Instagram Professional Account Required",
             details:
-              "To publish videos, you need to use an Instagram Business Account connected to a Facebook Page. Your current Instagram account doesn't have the proper permissions for publishing content.",
+              "Your Instagram account must be a Professional account (Business or Creator) to publish content via the API. Please convert your account to a Professional account and try again.",
             setupInstructions: [
-              "1. Convert your Instagram account to a Professional account (Business or Creator)",
-              "2. Connect your Instagram Professional account to a Facebook Page",
-              "3. Reconnect your Instagram account in this app",
+              "1. Go to your Instagram profile and tap the hamburger menu",
+              "2. Tap Settings > Account > Switch to Professional Account",
+              "3. Follow the steps to set up a Business or Creator account",
+              "4. Reconnect your Instagram account in this app",
               "Learn more at: https://help.instagram.com/502981923235522",
             ],
           },
           { status: 403 },
-        );
-      }
-
-      // If the direct Instagram approach failed, try using the Facebook Graph API
-      console.log(
-        "Using Facebook Graph API to find Instagram Business Account",
-      );
-
-      // Try to get the user's Facebook Pages using the access token
-      const pagesRes = await fetch(
-        `https://graph.facebook.com/v18.0/me/accounts?fields=id,name,access_token,instagram_business_account{id,name,username}&access_token=${accessToken}`,
-      );
-
-      const pagesDataText = await pagesRes.text();
-      console.log("Facebook Pages raw response:", pagesDataText);
-
-      if (!pagesRes.ok) {
-        throw new Error(`Failed to get Facebook Pages: ${pagesDataText}`);
-      }
-
-      try {
-        const pagesData = JSON.parse(pagesDataText);
-
-        if (!pagesData.data || pagesData.data.length === 0) {
-          return NextResponse.json(
-            {
-              error: "No Facebook Pages Found",
-              details:
-                "Your Facebook account doesn't have any Pages, or your app doesn't have permission to access them. You need a Facebook Page connected to an Instagram Business Account to publish videos.",
-              setupInstructions: [
-                "1. Create a Facebook Page at https://facebook.com/pages/create",
-                "2. Connect your Instagram Professional account to this Page",
-                "3. Reconnect your Instagram account in this app",
-              ],
-            },
-            { status: 403 },
-          );
-        }
-
-        // Find the first page with an Instagram Business Account
-        let pageWithIG = null;
-        for (const page of pagesData.data) {
-          if (page.instagram_business_account) {
-            pageWithIG = page;
-            break;
-          }
-        }
-
-        if (!pageWithIG) {
-          return NextResponse.json(
-            {
-              error: "No Instagram Business Account Found",
-              details:
-                "None of your Facebook Pages are connected to an Instagram Business Account. Please connect an Instagram Business Account to one of your Facebook Pages.",
-              setupInstructions: [
-                "1. Go to your Facebook Page settings",
-                "2. Look for 'Instagram' in the Page settings menu",
-                "3. Connect your Instagram Professional account",
-                "4. Reconnect your Instagram account in this app",
-              ],
-            },
-            { status: 403 },
-          );
-        }
-
-        igBusinessAccountId = pageWithIG.instagram_business_account.id;
-        pageAccessToken = pageWithIG.access_token;
-
-        console.log("Found Instagram Business Account:", igBusinessAccountId);
-        console.log("Using Page Access Token for publishing");
-      } catch (parseError) {
-        console.error("Error parsing Pages response:", parseError);
-        throw new Error(
-          `Failed to parse Facebook Pages response: ${pagesDataText}`,
         );
       }
     } catch (authError) {
@@ -192,7 +127,7 @@ export async function POST(request: Request) {
         {
           error: "Instagram Authentication Failed",
           details:
-            "There was an error authenticating with Instagram. Please ensure your account is properly connected and your Instagram account is a Professional account (Business or Creator) linked to a Facebook Page.",
+            "There was an error authenticating with Instagram. Please ensure your account is properly connected and your Instagram account is a Professional account (Business or Creator).",
         },
         { status: 401 },
       );
@@ -203,13 +138,13 @@ export async function POST(request: Request) {
         {
           error: "Invalid Instagram Configuration",
           details:
-            "Could not find a valid Instagram Business Account ID or Page Access Token. Please check your Instagram account setup.",
+            "Could not find a valid Instagram Professional Account ID or access token. Please ensure your account is properly connected.",
         },
         { status: 500 },
       );
     }
 
-    // Now we have a valid Instagram Business Account ID and Page Access Token
+    // Now we have a valid Instagram ID and access token
     // Step 1: Create a media container
     console.log("Creating Instagram media container with video URL:", mediaUrl);
     const containerParams = new URLSearchParams({
@@ -219,8 +154,9 @@ export async function POST(request: Request) {
       caption: caption,
     });
 
+    // Use the direct Instagram graph API endpoint
     const createContainerRes = await fetch(
-      `https://graph.facebook.com/v18.0/${igBusinessAccountId}/media`,
+      `https://graph.instagram.com/${igBusinessAccountId}/media`,
       {
         method: "POST",
         headers: {
@@ -254,7 +190,7 @@ export async function POST(request: Request) {
 
     while (retryCount < maxRetries) {
       const statusRes = await fetch(
-        `https://graph.facebook.com/v18.0/${containerId}?fields=status_code&access_token=${pageAccessToken}`,
+        `https://graph.instagram.com/${containerId}?fields=status_code&access_token=${pageAccessToken}`,
       );
 
       if (!statusRes.ok) {
@@ -293,7 +229,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // Step 2: Publish the container
+    // Step 2: Publish the container using direct Instagram API
     console.log("Publishing Instagram media container:", containerId);
     const publishParams = new URLSearchParams({
       access_token: pageAccessToken,
@@ -301,7 +237,7 @@ export async function POST(request: Request) {
     });
 
     const publishRes = await fetch(
-      `https://graph.facebook.com/v18.0/${igBusinessAccountId}/media_publish`,
+      `https://graph.instagram.com/${igBusinessAccountId}/media_publish`,
       {
         method: "POST",
         headers: {
