@@ -149,8 +149,68 @@ export default function UploadForm({
 
           const instagramData = await instagramRes.json();
 
-          if (instagramRes.ok && instagramData.mediaId) {
-            uploadSuccess = true;
+          if (instagramRes.ok) {
+            if (
+              instagramData.status === "processing" &&
+              instagramData.containerId
+            ) {
+              // Container created, now poll for status
+              setUploadStatus("success");
+              // Add a notification that it's still processing in the background
+              setErrorMessages([
+                "Instagram: Your video is being processed. It will appear on Instagram shortly.",
+              ]);
+
+              // Start polling for container status (every 2 seconds)
+              const checkStatus = async () => {
+                try {
+                  const statusRes = await fetch("/api/instagram/check-status", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      containerId: instagramData.containerId,
+                      igBusinessAccountId: instagramData.igBusinessAccountId,
+                      mediaUrl: blobResult.url, // Pass this to clean up the blob after publishing
+                    }),
+                  });
+
+                  const statusData = await statusRes.json();
+
+                  if (statusRes.ok) {
+                    if (statusData.status === "success") {
+                      console.log(
+                        "Instagram upload complete, mediaId:",
+                        statusData.mediaId,
+                      );
+                      // Container published successfully, no need to poll anymore
+                      return;
+                    } else if (statusData.status === "processing") {
+                      // Still processing, continue polling
+                      console.log("Instagram container still processing...");
+                      setTimeout(checkStatus, 2000);
+                    }
+                  } else {
+                    console.error(
+                      "Error checking Instagram status:",
+                      statusData,
+                    );
+                    // If there's an error, stop polling
+                  }
+                } catch (error) {
+                  console.error("Error in status check:", error);
+                  // If there's an error, stop polling
+                }
+              };
+
+              // Start the polling process
+              checkStatus();
+
+              // Mark this as successful for the UI since we've started the background process
+              uploadSuccess = true;
+            } else if (instagramData.mediaId) {
+              // Direct success (unlikely with our new approach but keep for compatibility)
+              uploadSuccess = true;
+            }
           } else {
             console.error("Instagram upload failed:", instagramData);
             uploadErrors.push(
@@ -201,6 +261,10 @@ export default function UploadForm({
           <AlertTitle className="text-green-800">Upload Successful</AlertTitle>
           <AlertDescription className="text-green-700">
             Your video has been uploaded and is being processed for publishing.
+            {errorMessages.length > 0 &&
+              errorMessages[0].includes("being processed") && (
+                <p className="mt-2 text-amber-600">{errorMessages[0]}</p>
+              )}
           </AlertDescription>
         </Alert>
       )}

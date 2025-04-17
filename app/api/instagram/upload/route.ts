@@ -9,7 +9,6 @@ export const config = {
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { del } from "@vercel/blob";
 
 export async function POST(request: Request) {
   try {
@@ -182,95 +181,13 @@ export async function POST(request: Request) {
     const containerId = containerData.id;
     console.log("Instagram media container created, ID:", containerId);
 
-    // Check container status before publishing
-    console.log("Checking container status before publishing");
-    let containerStatus = "";
-    const maxRetries = 10;
-    let retryCount = 0;
-
-    while (retryCount < maxRetries) {
-      const statusRes = await fetch(
-        `https://graph.instagram.com/${containerId}?fields=status_code&access_token=${pageAccessToken}`,
-      );
-
-      if (!statusRes.ok) {
-        const statusError = await statusRes.text();
-        console.error("Failed to check container status:", statusError);
-        break;
-      }
-
-      const statusData = await statusRes.json();
-      containerStatus = statusData.status_code;
-      console.log(`Container ${containerId} status: ${containerStatus}`);
-
-      if (containerStatus === "FINISHED") {
-        break;
-      } else if (containerStatus === "ERROR") {
-        console.error("Container processing error:", statusData);
-        return NextResponse.json(
-          {
-            error: "Error processing Instagram media container",
-            details: JSON.stringify(statusData),
-          },
-          { status: 500 },
-        );
-      }
-
-      // Wait before checking again
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      retryCount++;
-    }
-
-    if (containerStatus !== "FINISHED" && retryCount >= maxRetries) {
-      console.error("Container processing timeout");
-      return NextResponse.json(
-        { error: "Timeout waiting for Instagram media container processing" },
-        { status: 500 },
-      );
-    }
-
-    // Step 2: Publish the container using direct Instagram API
-    console.log("Publishing Instagram media container:", containerId);
-    const publishParams = new URLSearchParams({
-      access_token: pageAccessToken,
-      creation_id: containerId,
+    // Instead of waiting for the container to be ready, return immediately
+    // with the container ID and let the client poll for status
+    return NextResponse.json({
+      status: "processing",
+      containerId: containerId,
+      igBusinessAccountId: igBusinessAccountId,
     });
-
-    const publishRes = await fetch(
-      `https://graph.instagram.com/${igBusinessAccountId}/media_publish`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: publishParams.toString(),
-      },
-    );
-
-    if (!publishRes.ok) {
-      const publishError = await publishRes.text();
-      console.error("Failed to publish Instagram media:", publishError);
-      return NextResponse.json(
-        { error: "Failed to publish Instagram media", details: publishError },
-        { status: 500 },
-      );
-    }
-
-    const publishData = await publishRes.json();
-    const mediaId = publishData.id;
-    console.log("Instagram media published successfully, ID:", mediaId);
-
-    // Delete the blob from Blob storage after successful Instagram upload
-    try {
-      console.log("Deleting blob after successful upload");
-      await del(mediaUrl);
-      console.log("Blob deleted successfully");
-    } catch (delError) {
-      console.error("Error deleting blob:", delError);
-      // Continue even if blob deletion fails
-    }
-
-    return NextResponse.json({ mediaId });
   } catch (error: unknown) {
     console.error("Unhandled error during Instagram upload process:", error);
     return NextResponse.json(
