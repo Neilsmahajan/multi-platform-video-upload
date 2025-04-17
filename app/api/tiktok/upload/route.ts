@@ -11,6 +11,110 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { del } from "@vercel/blob";
 
+// Helper function to wait for a specific duration
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Define types for TikTok API responses
+interface TikTokUploadStatusData {
+  status:
+    | "PUBLISH_FAILED"
+    | "PUBLISH_SUCCESSFUL"
+    | "PUBLISHED"
+    | "UPLOAD_SUCCESSFUL";
+  [key: string]:
+    | string
+    | number
+    | boolean
+    | object
+    | unknown[]
+    | null
+    | undefined; // For other properties in the response
+}
+
+interface TikTokUploadResponse {
+  data?: TikTokUploadStatusData;
+  [key: string]:
+    | string
+    | number
+    | boolean
+    | object
+    | unknown[]
+    | null
+    | undefined; // For other properties in the response
+}
+
+interface TikTokUploadTimeout {
+  status: "timeout";
+  message: string;
+}
+
+type TikTokUploadResult = TikTokUploadResponse | TikTokUploadTimeout;
+
+// Helper function to poll TikTok status until completion or max attempts reached
+async function pollUploadStatus(
+  accessToken: string,
+  publishId: string,
+  maxAttempts = 5,
+): Promise<TikTokUploadResult> {
+  let attempts = 0;
+
+  while (attempts < maxAttempts) {
+    attempts++;
+    console.log(
+      `Checking TikTok upload status (attempt ${attempts}/${maxAttempts})`,
+    );
+
+    const statusResponse = await fetch(
+      "https://open.tiktokapis.com/v2/post/publish/status/fetch/",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json; charset=UTF-8",
+        },
+        body: JSON.stringify({
+          publish_id: publishId,
+        }),
+      },
+    );
+
+    if (!statusResponse.ok) {
+      const statusError = await statusResponse.text();
+      console.error("Failed to check TikTok upload status:", statusError);
+      throw new Error(`Status check failed: ${statusError}`);
+    }
+
+    const statusData = await statusResponse.json();
+    console.log("TikTok upload status response:", statusData);
+
+    // Check if we have a definitive status
+    if (statusData.data) {
+      if (statusData.data.status === "PUBLISH_FAILED") {
+        throw new Error(
+          "TikTok publishing failed: " + JSON.stringify(statusData.data),
+        );
+      } else if (
+        statusData.data.status === "PUBLISH_SUCCESSFUL" ||
+        statusData.data.status === "PUBLISHED"
+      ) {
+        return statusData;
+      } else if (statusData.data.status === "UPLOAD_SUCCESSFUL") {
+        // Upload is successful but still needs to be processed for publishing
+        console.log("Upload successful, waiting for processing...");
+      }
+    }
+
+    // Wait before checking again
+    await delay(2000);
+  }
+
+  // If we get here, we've hit max attempts without a definitive status
+  return {
+    status: "timeout",
+    message: "Status polling timed out but upload may still be processing",
+  };
+}
+
 export async function POST(request: Request) {
   try {
     // Validate session
@@ -80,6 +184,7 @@ export async function POST(request: Request) {
     // Step 1: Initialize video upload with TikTok using FILE_UPLOAD method
     console.log("Initializing TikTok video upload with FILE_UPLOAD method");
 
+    // Include caption and draft mode in the initialization request
     const initResponse = await fetch(
       "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/",
       {
@@ -94,6 +199,10 @@ export async function POST(request: Request) {
             video_size: videoSize,
             chunk_size: videoSize,
             total_chunk_count: 1,
+          },
+          post_info: {
+            title: caption.substring(0, 150), // TikTok has a title/caption limit
+            privacy_level: "SELF_ONLY", // Create as a draft
           },
         }),
       },
@@ -158,57 +267,53 @@ export async function POST(request: Request) {
 
     console.log("Video successfully uploaded to TikTok");
 
-    // Step 3: Check upload status
-    console.log("Checking TikTok upload status");
-
-    // Wait a moment before checking status (TikTok might need time to process)
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-
-    const statusResponse = await fetch(
-      "https://open.tiktokapis.com/v2/post/publish/status/fetch/",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${tiktokAccount.access_token}`,
-          "Content-Type": "application/json; charset=UTF-8",
-        },
-        body: JSON.stringify({
-          publish_id: publishId,
-        }),
-      },
-    );
-
-    if (!statusResponse.ok) {
-      const statusError = await statusResponse.text();
-      console.error("Failed to check TikTok upload status:", statusError);
-      return NextResponse.json(
-        {
-          error: "Failed to check upload status",
-          details: statusError,
-        },
-        { status: statusResponse.status },
-      );
-    }
-
-    const statusData = await statusResponse.json();
-    console.log("TikTok upload status response:", statusData);
-
-    // Delete the blob after successful upload
+    // Step 3: Poll for status with more robust checking
     try {
-      console.log("Deleting blob after successful upload");
-      await del(mediaUrl);
-      console.log("Blob deleted successfully");
-    } catch (delError) {
-      console.error("Error deleting blob:", delError);
-      // Continue even if blob deletion fails
-    }
+      // Initial delay to allow TikTok to begin processing
+      await delay(3000);
 
-    return NextResponse.json({
-      status: "success",
-      publishId: publishId,
-      message:
-        "Video successfully sent to TikTok inbox. The user will need to open TikTok to review and publish.",
-    });
+      // Poll for status until completion or timeout
+      const finalStatus = await pollUploadStatus(
+        tiktokAccount.access_token,
+        publishId,
+        10, // Try up to 10 times (with 2s delay = up to 20s of waiting)
+      );
+
+      console.log("Final TikTok upload status:", finalStatus);
+
+      // Delete the blob after successful upload
+      try {
+        console.log("Deleting blob after successful upload");
+        await del(mediaUrl);
+        console.log("Blob deleted successfully");
+      } catch (delError) {
+        console.error("Error deleting blob:", delError);
+        // Continue even if blob deletion fails
+      }
+
+      return NextResponse.json({
+        status: "success",
+        publishId: publishId,
+        processingStatus:
+          ("data" in finalStatus && finalStatus.data?.status) || "PROCESSING",
+        message:
+          "Video uploaded to TikTok and being processed. Please check your TikTok app notifications and drafts folder to continue editing and publishing.",
+        note: "It may take a few minutes for the video to appear in your TikTok drafts.",
+      });
+    } catch (statusError) {
+      console.error("Error during status polling:", statusError);
+      // Even if status polling fails, the upload might be successful
+      return NextResponse.json({
+        status: "partial_success",
+        publishId: publishId,
+        message:
+          "Video uploaded to TikTok but we couldn't confirm final processing. Please check your TikTok app notifications and drafts folder.",
+        error:
+          statusError instanceof Error
+            ? statusError.message
+            : "Status check failed",
+      });
+    }
   } catch (error: unknown) {
     console.error("Unhandled error during TikTok upload process:", error);
     return NextResponse.json(

@@ -242,10 +242,22 @@ export default function UploadForm({
           if (tiktokRes.ok && tiktokData.publishId) {
             console.log("TikTok upload successful:", tiktokData.publishId);
             uploadSuccess = true;
-            // Add a notification that the user needs to check TikTok
-            setErrorMessages([
-              "TikTok: Your video has been sent to TikTok. Please open the TikTok app and check notifications to review and publish your video.",
-            ]);
+            // Add detailed notification about TikTok status
+            let tiktokMessage =
+              "TikTok: Your video has been uploaded to TikTok.";
+
+            if (tiktokData.status === "success") {
+              tiktokMessage +=
+                " Please open the TikTok app and check your drafts folder or notifications to complete publishing.";
+              if (tiktokData.note) {
+                tiktokMessage += " " + tiktokData.note;
+              }
+            } else if (tiktokData.status === "partial_success") {
+              tiktokMessage +=
+                " The upload was initiated but status confirmation timed out. Please check your TikTok app drafts.";
+            }
+
+            setErrorMessages([tiktokMessage]);
           } else {
             console.error("TikTok upload failed:", tiktokData);
             uploadErrors.push(`TikTok: ${tiktokData.error || "Unknown error"}`);
