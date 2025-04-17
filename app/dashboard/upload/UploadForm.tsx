@@ -227,8 +227,38 @@ export default function UploadForm({
           );
         }
       } else if (platform === "tiktok" && tiktokConnected) {
-        // TikTok upload logic would go here
-        uploadErrors.push("TikTok uploads not yet implemented");
+        try {
+          const tiktokRes = await fetch("/api/tiktok/upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              mediaUrl: blobResult.url,
+              caption: description || title,
+            }),
+          });
+
+          const tiktokData = await tiktokRes.json();
+
+          if (tiktokRes.ok && tiktokData.publishId) {
+            console.log("TikTok upload successful:", tiktokData.publishId);
+            uploadSuccess = true;
+            // Add a notification that the user needs to check TikTok
+            setErrorMessages([
+              "TikTok: Your video has been sent to TikTok. Please open the TikTok app and check notifications to review and publish your video.",
+            ]);
+          } else {
+            console.error("TikTok upload failed:", tiktokData);
+            uploadErrors.push(`TikTok: ${tiktokData.error || "Unknown error"}`);
+            if (tiktokData.details) {
+              console.error("TikTok error details:", tiktokData.details);
+            }
+          }
+        } catch (error) {
+          console.error("Error uploading to TikTok:", error);
+          uploadErrors.push(
+            `TikTok: ${error instanceof Error ? error.message : "Unknown error"}`,
+          );
+        }
       }
 
       // Set upload status based on results
