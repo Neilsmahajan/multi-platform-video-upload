@@ -58,8 +58,27 @@ export async function POST(request: Request) {
 
     console.log("Found TikTok account with access token");
 
-    // Step 1: Initialize video upload with TikTok
-    console.log("Initializing TikTok video upload");
+    // First, get the video file from the blob URL to determine its size
+    console.log("Fetching video file from blob:", mediaUrl);
+    const videoResponse = await fetch(mediaUrl);
+
+    if (!videoResponse.ok) {
+      console.error("Failed to fetch video from blob URL", {
+        status: videoResponse.status,
+      });
+      return NextResponse.json(
+        { error: "Failed to fetch video from blob storage" },
+        { status: 500 },
+      );
+    }
+
+    // Get video as array buffer to determine size
+    const videoBuffer = await videoResponse.arrayBuffer();
+    const videoSize = videoBuffer.byteLength;
+    console.log("Video size:", videoSize, "bytes");
+
+    // Step 1: Initialize video upload with TikTok using FILE_UPLOAD method
+    console.log("Initializing TikTok video upload with FILE_UPLOAD method");
 
     const initResponse = await fetch(
       "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/",
@@ -71,8 +90,10 @@ export async function POST(request: Request) {
         },
         body: JSON.stringify({
           source_info: {
-            source: "PULL_FROM_URL",
-            video_url: mediaUrl,
+            source: "FILE_UPLOAD",
+            video_size: videoSize,
+            chunk_size: videoSize,
+            total_chunk_count: 1,
           },
         }),
       },
@@ -91,8 +112,13 @@ export async function POST(request: Request) {
     }
 
     const initData = await initResponse.json();
+    console.log("TikTok init response:", initData);
 
-    if (!initData.data || !initData.data.publish_id) {
+    if (
+      !initData.data ||
+      !initData.data.publish_id ||
+      !initData.data.upload_url
+    ) {
       console.error("Invalid response from TikTok init API:", initData);
       return NextResponse.json(
         { error: "Invalid response from TikTok" },
@@ -101,9 +127,38 @@ export async function POST(request: Request) {
     }
 
     const publishId = initData.data.publish_id;
+    const uploadUrl = initData.data.upload_url;
     console.log("TikTok upload initialized with publish_id:", publishId);
+    console.log("TikTok upload URL:", uploadUrl);
 
-    // Step 2: Check upload status
+    // Step 2: Upload the video file to TikTok's provided URL
+    console.log("Uploading video to TikTok...");
+
+    const uploadResponse = await fetch(uploadUrl, {
+      method: "PUT",
+      headers: {
+        "Content-Type":
+          videoResponse.headers.get("content-type") || "video/mp4",
+        "Content-Range": `bytes 0-${videoSize - 1}/${videoSize}`,
+      },
+      body: new Uint8Array(videoBuffer),
+    });
+
+    if (!uploadResponse.ok) {
+      const uploadError = await uploadResponse.text();
+      console.error("Failed to upload video to TikTok:", uploadError);
+      return NextResponse.json(
+        {
+          error: "Failed to upload video to TikTok",
+          details: uploadError,
+        },
+        { status: uploadResponse.status },
+      );
+    }
+
+    console.log("Video successfully uploaded to TikTok");
+
+    // Step 3: Check upload status
     console.log("Checking TikTok upload status");
 
     // Wait a moment before checking status (TikTok might need time to process)
@@ -138,9 +193,9 @@ export async function POST(request: Request) {
     const statusData = await statusResponse.json();
     console.log("TikTok upload status response:", statusData);
 
-    // Delete the blob after successful upload initiation
+    // Delete the blob after successful upload
     try {
-      console.log("Deleting blob after successful upload initialization");
+      console.log("Deleting blob after successful upload");
       await del(mediaUrl);
       console.log("Blob deleted successfully");
     } catch (delError) {
