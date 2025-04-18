@@ -228,6 +228,7 @@ export default function UploadForm({
         }
       } else if (platform === "tiktok" && tiktokConnected) {
         try {
+          console.log("Starting TikTok upload with blob URL:", blobResult.url);
           const tiktokRes = await fetch("/api/tiktok/upload", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -237,7 +238,21 @@ export default function UploadForm({
             }),
           });
 
-          const tiktokData = await tiktokRes.json();
+          // First try to parse the response as JSON
+          let tiktokData;
+          try {
+            tiktokData = await tiktokRes.json();
+          } catch (jsonError) {
+            console.error(
+              "Failed to parse TikTok response as JSON:",
+              jsonError,
+            );
+            // If we can't parse JSON, get the response text
+            const errorText = await tiktokRes.text();
+            throw new Error(
+              `TikTok API returned non-JSON response: ${errorText.substring(0, 100)}`,
+            );
+          }
 
           if (tiktokRes.ok) {
             if (tiktokData.status === "processing" && tiktokData.publishId) {
@@ -261,7 +276,18 @@ export default function UploadForm({
                     }),
                   });
 
-                  const statusData = await statusRes.json();
+                  let statusData;
+                  try {
+                    statusData = await statusRes.json();
+                  } catch (jsonError) {
+                    console.error(
+                      "Failed to parse status response as JSON:",
+                      jsonError,
+                    );
+                    throw new Error(
+                      "Status check returned invalid JSON response",
+                    );
+                  }
 
                   if (statusRes.ok) {
                     if (statusData.status === "success") {
@@ -293,7 +319,11 @@ export default function UploadForm({
                   }
                 } catch (error) {
                   console.error("Error in TikTok status check:", error);
-                  // If there's an error, stop polling
+                  // Show the error in the UI
+                  setUploadStatus("error");
+                  setErrorMessages([
+                    `TikTok status check failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+                  ]);
                 }
               };
 
@@ -312,10 +342,15 @@ export default function UploadForm({
             }
           } else {
             console.error("TikTok upload failed:", tiktokData);
-            uploadErrors.push(`TikTok: ${tiktokData.error || "Unknown error"}`);
+            let errorMessage = `TikTok: ${tiktokData.error || "Unknown error"}`;
+
+            // Add details if available
             if (tiktokData.details) {
+              errorMessage += ` - ${tiktokData.details}`;
               console.error("TikTok error details:", tiktokData.details);
             }
+
+            uploadErrors.push(errorMessage);
           }
         } catch (error) {
           console.error("Error uploading to TikTok:", error);
