@@ -240,24 +240,54 @@ export default function UploadForm({
           const tiktokData = await tiktokRes.json();
 
           if (tiktokRes.ok && tiktokData.publishId) {
-            console.log("TikTok upload successful:", tiktokData.publishId);
+            console.log("TikTok upload initiated:", tiktokData.publishId);
             uploadSuccess = true;
-            // Add detailed notification about TikTok status
-            let tiktokMessage =
-              "TikTok: Your video has been uploaded to TikTok.";
 
-            if (tiktokData.status === "success") {
-              tiktokMessage +=
-                " Please open the TikTok app and check your drafts folder or notifications to complete publishing.";
-              if (tiktokData.note) {
-                tiktokMessage += " " + tiktokData.note;
+            // Add notification about TikTok status
+            setErrorMessages([
+              "TikTok: Your video is being processed. It will appear in your TikTok app inbox or drafts shortly. " +
+                (tiktokData.note || ""),
+            ]);
+
+            // Start polling for container status (every 3 seconds)
+            const checkStatus = async () => {
+              try {
+                const statusRes = await fetch("/api/tiktok/check-status", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    publishId: tiktokData.publishId,
+                    mediaUrl: blobResult.url, // Pass this to clean up the blob after publishing
+                  }),
+                });
+
+                const statusData = await statusRes.json();
+
+                if (statusRes.ok) {
+                  if (statusData.status === "success") {
+                    console.log("TikTok upload complete:", statusData.message);
+                    // Successfully published, no need to poll anymore
+                    return;
+                  } else if (statusData.status === "processing") {
+                    // Still processing, continue polling
+                    console.log("TikTok video still processing...");
+                    setTimeout(checkStatus, 3000);
+                  } else if (statusData.status === "error") {
+                    console.error("TikTok upload error:", statusData.message);
+                    // If there's an error, stop polling
+                  }
+                } else {
+                  console.error("Error checking TikTok status:", statusData);
+                  // If there's an error, stop polling
+                }
+              } catch (error) {
+                console.error("Error in TikTok status check:", error);
+                // If there's an error, stop polling
               }
-            } else if (tiktokData.status === "partial_success") {
-              tiktokMessage +=
-                " The upload was initiated but status confirmation timed out. Please check your TikTok app drafts.";
-            }
+            };
 
-            setErrorMessages([tiktokMessage]);
+            // Start the polling process in the background
+            checkStatus();
           } else {
             console.error("TikTok upload failed:", tiktokData);
             uploadErrors.push(`TikTok: ${tiktokData.error || "Unknown error"}`);
