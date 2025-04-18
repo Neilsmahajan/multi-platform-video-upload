@@ -9,7 +9,6 @@ export const config = {
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { del } from "@vercel/blob";
 
 // Helper function to wait for a specific duration
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -51,7 +50,7 @@ interface TikTokUploadTimeout {
 type TikTokUploadResult = TikTokUploadResponse | TikTokUploadTimeout;
 
 // Helper function to poll TikTok status until completion or max attempts reached
-async function pollUploadStatus(
+export async function pollUploadStatus(
   accessToken: string,
   publishId: string,
   maxAttempts = 5,
@@ -267,53 +266,16 @@ export async function POST(request: Request) {
 
     console.log("Video successfully uploaded to TikTok");
 
-    // Step 3: Poll for status with more robust checking
-    try {
-      // Initial delay to allow TikTok to begin processing
-      await delay(3000);
-
-      // Poll for status until completion or timeout
-      const finalStatus = await pollUploadStatus(
-        tiktokAccount.access_token,
-        publishId,
-        10, // Try up to 10 times (with 2s delay = up to 20s of waiting)
-      );
-
-      console.log("Final TikTok upload status:", finalStatus);
-
-      // Delete the blob after successful upload
-      try {
-        console.log("Deleting blob after successful upload");
-        await del(mediaUrl);
-        console.log("Blob deleted successfully");
-      } catch (delError) {
-        console.error("Error deleting blob:", delError);
-        // Continue even if blob deletion fails
-      }
-
-      return NextResponse.json({
-        status: "success",
-        publishId: publishId,
-        processingStatus:
-          ("data" in finalStatus && finalStatus.data?.status) || "PROCESSING",
-        message:
-          "Video uploaded to TikTok and being processed. Please check your TikTok app notifications and drafts folder to continue editing and publishing.",
-        note: "It may take a few minutes for the video to appear in your TikTok drafts.",
-      });
-    } catch (statusError) {
-      console.error("Error during status polling:", statusError);
-      // Even if status polling fails, the upload might be successful
-      return NextResponse.json({
-        status: "partial_success",
-        publishId: publishId,
-        message:
-          "Video uploaded to TikTok but we couldn't confirm final processing. Please check your TikTok app notifications and drafts folder.",
-        error:
-          statusError instanceof Error
-            ? statusError.message
-            : "Status check failed",
-      });
-    }
+    // Instead of polling for status here, return immediately with the publishId
+    // so the client can poll for status separately
+    return NextResponse.json({
+      status: "processing",
+      publishId: publishId,
+      accessToken: tiktokAccount.access_token,
+      mediaUrl: mediaUrl,
+      message:
+        "Video uploaded to TikTok and is being processed. Please check the status for updates.",
+    });
   } catch (error: unknown) {
     console.error("Unhandled error during TikTok upload process:", error);
     return NextResponse.json(
