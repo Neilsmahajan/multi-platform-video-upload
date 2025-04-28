@@ -128,12 +128,20 @@ export async function POST(request: Request) {
             }
           }
 
+          let itemId = "";
+          if (statusData.data.item_id) {
+            itemId = statusData.data.item_id;
+          }
+
           return NextResponse.json({
             status: "success",
             publishId: publishId,
+            itemId: itemId,
             processingStatus: statusData.data.status,
-            message: "Video has been uploaded to TikTok! To publish it:",
-            note: "1. Open your TikTok app\n2. Check the notification bell icon\n3. Look for a draft notification\n4. You may also find it in TikTok Studio or your drafts folder",
+            message: "Video successfully published to your TikTok profile!",
+            note: itemId
+              ? `Your TikTok post ID is: ${itemId}`
+              : "Check your TikTok profile to see your new video",
           });
         } else if (statusData.data.status === "UPLOAD_SUCCESSFUL") {
           // Upload is successful but still needs to be processed for publishing
@@ -141,8 +149,8 @@ export async function POST(request: Request) {
             status: "processing",
             publishId: publishId,
             processingStatus: statusData.data.status,
-            message: "Upload successful, still being processed by TikTok.",
-            note: "Please be patient. Once processing completes, you'll receive a notification in the TikTok app.",
+            message: "Upload successful, TikTok is now processing your video.",
+            note: "Your video will be published directly to your profile once processing is complete.",
           });
         } else if (statusData.data.status === "PROCESSING_UPLOAD") {
           // This is a common status during processing
@@ -151,7 +159,7 @@ export async function POST(request: Request) {
             publishId: publishId,
             processingStatus: statusData.data.status,
             message: "TikTok is still processing your video upload.",
-            note: "This may take a few minutes depending on video size. When complete, check your TikTok app notifications.",
+            note: "This may take a few minutes depending on video size.",
           });
         } else {
           // Still processing with other status
@@ -170,7 +178,7 @@ export async function POST(request: Request) {
           publishId: publishId,
           message:
             "Status check did not return definitive status. Still processing.",
-          note: "Please check your TikTok app notifications and drafts folder.",
+          note: "Please check your TikTok profile for your video.",
         });
       }
     } catch (statusError) {

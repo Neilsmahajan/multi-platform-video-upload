@@ -405,7 +405,7 @@ export default function UploadForm({
             Your video has been uploaded and is being processed for publishing.
             {errorMessages.length > 0 &&
               errorMessages[0].includes("TikTok:") && (
-                <div className="mt-2 text-amber-600 whitespace-pre-line">
+                <div className="mt-2 text-amber-600 whitespace-pre-line font-medium">
                   {errorMessages[0]}
                 </div>
               )}

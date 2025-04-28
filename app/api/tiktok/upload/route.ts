@@ -85,12 +85,35 @@ export async function POST(request: Request) {
       const videoSize = videoBuffer.byteLength;
       console.log("Video size:", videoSize, "bytes");
 
-      // Step 1: Initialize video upload with TikTok using FILE_UPLOAD method
-      console.log("Initializing TikTok video upload with FILE_UPLOAD method");
+      // First fetch creator info to get valid privacy levels
+      console.log("Fetching creator info before posting");
+      const creatorInfoRes = await fetch("/api/tiktok/creator-info", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
 
-      // Set a new timeout for the TikTok initialization
-      const initController = new AbortController();
-      const initTimeoutId = setTimeout(() => initController.abort(), 8000);
+      if (!creatorInfoRes.ok) {
+        console.error("Failed to fetch creator info");
+        return NextResponse.json(
+          { error: "Failed to fetch TikTok creator info before posting" },
+          { status: 500 },
+        );
+      }
+
+      const creatorInfo = await creatorInfoRes.json();
+      console.log("Creator info:", creatorInfo);
+
+      // Get the first available privacy level or default to PUBLIC_TO_EVERYONE
+      let privacyLevel = "PUBLIC_TO_EVERYONE";
+      if (
+        creatorInfo.data &&
+        creatorInfo.data.privacy_level_options &&
+        creatorInfo.data.privacy_level_options.length > 0
+      ) {
+        privacyLevel = creatorInfo.data.privacy_level_options[0];
+      }
 
       // Extract hashtags from the caption (if any)
       const hashtagRegex = /#(\w+)/g;
@@ -100,36 +123,36 @@ export async function POST(request: Request) {
         hashtags.push(match[1]);
       }
 
-      // Prepare a cleaner caption without hashtags for the title
-      const cleanCaption = caption.replace(hashtagRegex, "").trim();
+      // Step 1: Initialize video upload with TikTok using FILE_UPLOAD method with DIRECT POST
+      console.log("Initializing TikTok video direct post");
 
-      // Include caption, hashtags, and draft mode in the initialization request
+      // Set a new timeout for the TikTok initialization
+      const initController = new AbortController();
+      const initTimeoutId = setTimeout(() => initController.abort(), 8000);
+
+      // Include caption, hashtags, and privacy level in the initialization request
       const initResponse = await fetch(
-        "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/",
+        "https://open.tiktokapis.com/v2/post/publish/video/init/",
         {
           method: "POST",
           headers: {
             Authorization: `Bearer ${tiktokAccount.access_token}`,
-            "Content-Type": "application/json",
+            "Content-Type": "application/json; charset=UTF-8",
           },
           body: JSON.stringify({
+            post_info: {
+              title: caption.substring(0, 2200), // Use full caption with hashtags
+              privacy_level: privacyLevel, // Use privacy level from creator info
+              disable_duet: false,
+              disable_comment: false,
+              disable_stitch: false,
+              video_cover_timestamp_ms: 0, // Use first frame for cover
+            },
             source_info: {
               source: "FILE_UPLOAD",
               video_size: videoSize,
               chunk_size: videoSize,
               total_chunk_count: 1,
-            },
-            post_info: {
-              title: cleanCaption.substring(0, 150), // TikTok has a title/caption limit
-              description: caption.substring(0, 2200), // Full caption with hashtags
-              privacy_level: "SELF_ONLY", // Create as a draft
-              disable_duet: false,
-              disable_comment: false,
-              disable_stitch: false,
-              brand_content_toggle: false,
-              brand_organic_toggle: false,
-              hashtag_names: hashtags.length > 0 ? hashtags : undefined,
-              mention_users: [], // No user mentions
             },
           }),
           signal: initController.signal,
@@ -151,7 +174,7 @@ export async function POST(request: Request) {
 
         return NextResponse.json(
           {
-            error: "Failed to initialize TikTok upload",
+            error: "Failed to initialize TikTok direct post",
             details: `TikTok API returned ${
               initResponse.status
             }: ${responseText.substring(0, 200)}`,
@@ -192,7 +215,7 @@ export async function POST(request: Request) {
 
       const publishId = initData.data.publish_id;
       const uploadUrl = initData.data.upload_url;
-      console.log("TikTok upload initialized with publish_id:", publishId);
+      console.log("TikTok direct post initialized with publish_id:", publishId);
       console.log("TikTok upload URL:", uploadUrl);
 
       // Step 2: Upload the video file to TikTok's provided URL
@@ -248,8 +271,8 @@ export async function POST(request: Request) {
           accessToken: tiktokAccount.access_token,
           mediaUrl: mediaUrl,
           message:
-            "Video uploaded to TikTok and is being processed. Please check your TikTok app notifications to continue editing and publishing.",
-          note: "It may take a few minutes for the notification to appear. Check your TikTok app's notification tab and inbox.",
+            "Video uploaded to TikTok and is being processed for direct posting.",
+          note: "The video will be published directly to your TikTok profile once processing is complete.",
         });
       } catch (uploadError) {
         clearTimeout(uploadTimeoutId);
