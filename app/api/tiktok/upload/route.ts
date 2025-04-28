@@ -10,110 +10,6 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
-// Helper function to wait for a specific duration
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-// Define types for TikTok API responses
-interface TikTokUploadStatusData {
-  status:
-    | "PUBLISH_FAILED"
-    | "PUBLISH_SUCCESSFUL"
-    | "PUBLISHED"
-    | "UPLOAD_SUCCESSFUL";
-  [key: string]:
-    | string
-    | number
-    | boolean
-    | object
-    | unknown[]
-    | null
-    | undefined; // For other properties in the response
-}
-
-interface TikTokUploadResponse {
-  data?: TikTokUploadStatusData;
-  [key: string]:
-    | string
-    | number
-    | boolean
-    | object
-    | unknown[]
-    | null
-    | undefined; // For other properties in the response
-}
-
-interface TikTokUploadTimeout {
-  status: "timeout";
-  message: string;
-}
-
-type TikTokUploadResult = TikTokUploadResponse | TikTokUploadTimeout;
-
-// Helper function to poll TikTok status until completion or max attempts reached
-export async function pollUploadStatus(
-  accessToken: string,
-  publishId: string,
-  maxAttempts = 5,
-): Promise<TikTokUploadResult> {
-  let attempts = 0;
-
-  while (attempts < maxAttempts) {
-    attempts++;
-    console.log(
-      `Checking TikTok upload status (attempt ${attempts}/${maxAttempts})`,
-    );
-
-    const statusResponse = await fetch(
-      "https://open.tiktokapis.com/v2/post/publish/status/fetch/",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json; charset=UTF-8",
-        },
-        body: JSON.stringify({
-          publish_id: publishId,
-        }),
-      },
-    );
-
-    if (!statusResponse.ok) {
-      const statusError = await statusResponse.text();
-      console.error("Failed to check TikTok upload status:", statusError);
-      throw new Error(`Status check failed: ${statusError}`);
-    }
-
-    const statusData = await statusResponse.json();
-    console.log("TikTok upload status response:", statusData);
-
-    // Check if we have a definitive status
-    if (statusData.data) {
-      if (statusData.data.status === "PUBLISH_FAILED") {
-        throw new Error(
-          "TikTok publishing failed: " + JSON.stringify(statusData.data),
-        );
-      } else if (
-        statusData.data.status === "PUBLISH_SUCCESSFUL" ||
-        statusData.data.status === "PUBLISHED"
-      ) {
-        return statusData;
-      } else if (statusData.data.status === "UPLOAD_SUCCESSFUL") {
-        // Upload is successful but still needs to be processed for publishing
-        console.log("Upload successful, waiting for processing...");
-      }
-    }
-
-    // Wait before checking again
-    await delay(2000);
-  }
-
-  // If we get here, we've hit max attempts without a definitive status
-  return {
-    status: "timeout",
-    message: "Status polling timed out but upload may still be processing",
-  };
-}
-
 export async function POST(request: Request) {
   try {
     // Validate session
@@ -163,27 +59,39 @@ export async function POST(request: Request) {
 
     // First, get the video file from the blob URL to determine its size
     console.log("Fetching video file from blob:", mediaUrl);
-    const videoResponse = await fetch(mediaUrl);
 
-    if (!videoResponse.ok) {
-      console.error("Failed to fetch video from blob URL", {
-        status: videoResponse.status,
-      });
-      return NextResponse.json(
-        { error: "Failed to fetch video from blob storage" },
-        { status: 500 },
-      );
-    }
-
-    // Get video as array buffer to determine size
-    const videoBuffer = await videoResponse.arrayBuffer();
-    const videoSize = videoBuffer.byteLength;
-    console.log("Video size:", videoSize, "bytes");
-
-    // Step 1: Initialize video upload with TikTok using FILE_UPLOAD method
-    console.log("Initializing TikTok video upload with FILE_UPLOAD method");
+    // Use a timeout for fetch operations
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
 
     try {
+      const videoResponse = await fetch(mediaUrl, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (!videoResponse.ok) {
+        console.error("Failed to fetch video from blob URL", {
+          status: videoResponse.status,
+        });
+        return NextResponse.json(
+          { error: "Failed to fetch video from blob storage" },
+          { status: 500 },
+        );
+      }
+
+      // Get video as array buffer to determine size
+      const videoBuffer = await videoResponse.arrayBuffer();
+      const videoSize = videoBuffer.byteLength;
+      console.log("Video size:", videoSize, "bytes");
+
+      // Step 1: Initialize video upload with TikTok using FILE_UPLOAD method
+      console.log("Initializing TikTok video upload with FILE_UPLOAD method");
+
+      // Set a new timeout for the TikTok initialization
+      const initController = new AbortController();
+      const initTimeoutId = setTimeout(() => initController.abort(), 8000);
+
       // Include caption and draft mode in the initialization request
       const initResponse = await fetch(
         "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/",
@@ -205,8 +113,10 @@ export async function POST(request: Request) {
               privacy_level: "SELF_ONLY", // Create as a draft
             },
           }),
+          signal: initController.signal,
         },
       );
+      clearTimeout(initTimeoutId);
 
       // Safely parse the response - check content type first
       let initData;
@@ -269,6 +179,10 @@ export async function POST(request: Request) {
       // Step 2: Upload the video file to TikTok's provided URL
       console.log("Uploading video to TikTok...");
 
+      // Set a new timeout for the upload operation
+      const uploadController = new AbortController();
+      const uploadTimeoutId = setTimeout(() => uploadController.abort(), 8000);
+
       try {
         const uploadResponse = await fetch(uploadUrl, {
           method: "PUT",
@@ -278,9 +192,9 @@ export async function POST(request: Request) {
             "Content-Range": `bytes 0-${videoSize - 1}/${videoSize}`,
           },
           body: new Uint8Array(videoBuffer),
-          // Add a longer timeout since we're uploading a large file
-          signal: AbortSignal.timeout(60000), // 60 second timeout
+          signal: uploadController.signal,
         });
+        clearTimeout(uploadTimeoutId);
 
         if (!uploadResponse.ok) {
           // Try to get response text - this might be HTML or another format
@@ -308,7 +222,7 @@ export async function POST(request: Request) {
 
         console.log("Video successfully uploaded to TikTok");
 
-        // Instead of polling for status here, return immediately with the publishId
+        // Return immediately with the publishId
         return NextResponse.json({
           status: "processing",
           publishId: publishId,
@@ -318,7 +232,21 @@ export async function POST(request: Request) {
             "Video uploaded to TikTok and is being processed. Please check the status for updates.",
         });
       } catch (uploadError) {
+        clearTimeout(uploadTimeoutId);
         console.error("Error during video upload to TikTok:", uploadError);
+
+        // Check if this is an AbortError (timeout)
+        if (uploadError instanceof Error && uploadError.name === "AbortError") {
+          return NextResponse.json(
+            {
+              error: "TikTok upload timeout",
+              details:
+                "The upload to TikTok took too long and was aborted. Try with a smaller video file.",
+            },
+            { status: 504 },
+          );
+        }
+
         return NextResponse.json(
           {
             error: "Failed to upload video to TikTok",
@@ -330,15 +258,29 @@ export async function POST(request: Request) {
           { status: 500 },
         );
       }
-    } catch (initError) {
-      console.error("Error initializing TikTok upload:", initError);
+    } catch (fetchError: unknown) {
+      clearTimeout(timeoutId);
+      console.error("Error fetching video from blob:", fetchError);
+
+      // Check if this is an AbortError (timeout)
+      if (fetchError instanceof Error && fetchError.name === "AbortError") {
+        return NextResponse.json(
+          {
+            error: "Video fetch timeout",
+            details:
+              "Fetching the video took too long and was aborted. Try with a smaller video file.",
+          },
+          { status: 504 },
+        );
+      }
+
       return NextResponse.json(
         {
-          error: "Failed to initialize TikTok upload",
+          error: "Failed to fetch video",
           details:
-            initError instanceof Error
-              ? initError.message
-              : "Unknown initialization error",
+            fetchError instanceof Error
+              ? fetchError.message
+              : "Unknown fetch error",
         },
         { status: 500 },
       );

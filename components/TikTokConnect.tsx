@@ -12,22 +12,36 @@ interface TikTokConnectProps {
 export default function TikTokConnect({ tiktokConnected }: TikTokConnectProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [error] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleConnect = () => {
+  const handleConnect = async () => {
     setLoading(true);
+    setError(null);
 
-    // Use current page URL as callback destination
-    signIn("tiktok", {
-      callbackUrl: window.location.href,
-      redirect: true,
-    });
-
-    // No need for additional code due to redirect
+    try {
+      // Use current page URL as callback destination
+      await signIn("tiktok", {
+        callbackUrl: window.location.href,
+        redirect: true,
+      });
+      // No need for additional code due to redirect
+    } catch (err) {
+      console.error("TikTok connection error:", err);
+      setError("Failed to connect TikTok account. Please try again.");
+      setLoading(false);
+    }
   };
 
-  const handleDisconnect = () => {
-    router.push("/api/auth/disconnect/tiktok");
+  const handleDisconnect = async () => {
+    setLoading(true);
+
+    try {
+      router.push("/api/auth/disconnect/tiktok");
+    } catch (err) {
+      console.error("TikTok disconnect error:", err);
+      setError("Failed to disconnect TikTok account");
+      setLoading(false);
+    }
   };
 
   return (
@@ -44,7 +58,14 @@ export default function TikTokConnect({ tiktokConnected }: TikTokConnectProps) {
           onClick={handleDisconnect}
           disabled={loading}
         >
-          Disconnect TikTok
+          {loading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Disconnecting...
+            </>
+          ) : (
+            "Disconnect TikTok"
+          )}
         </Button>
       ) : (
         <Button onClick={handleConnect} disabled={loading}>

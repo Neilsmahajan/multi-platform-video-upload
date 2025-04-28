@@ -26,6 +26,10 @@ export async function POST(request: Request) {
     console.log(`Checking status for TikTok upload ${publishId}`);
 
     try {
+      // Use a timeout for the status check request
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+
       const statusResponse = await fetch(
         "https://open.tiktokapis.com/v2/post/publish/status/fetch/",
         {
@@ -37,15 +41,21 @@ export async function POST(request: Request) {
           body: JSON.stringify({
             publish_id: publishId,
           }),
-          // Add a reasonable timeout
-          signal: AbortSignal.timeout(30000), // 30 second timeout
+          signal: controller.signal,
         },
       );
+      clearTimeout(timeoutId);
 
-      // Safely parse the response
-      let statusData;
-      const contentType = statusResponse.headers.get("content-type");
+      // Get the full response text first
       const responseText = await statusResponse.text();
+      const contentType = statusResponse.headers.get("content-type");
+
+      // Log the status response for debugging
+      console.log("TikTok status check response:", {
+        status: statusResponse.status,
+        contentType,
+        responsePreview: responseText.substring(0, 200),
+      });
 
       if (!statusResponse.ok) {
         console.error("Failed to check TikTok upload status:", {
@@ -56,6 +66,7 @@ export async function POST(request: Request) {
 
         return NextResponse.json(
           {
+            status: "error",
             error: "Failed to check TikTok status",
             details: `Status check failed with ${
               statusResponse.status
@@ -66,9 +77,15 @@ export async function POST(request: Request) {
       }
 
       // Try to parse as JSON
+      let statusData;
       try {
-        statusData = JSON.parse(responseText);
-        console.log("TikTok upload status response:", statusData);
+        // Only attempt to parse if the response is not empty
+        if (responseText && responseText.trim()) {
+          statusData = JSON.parse(responseText);
+          console.log("TikTok upload status data:", statusData);
+        } else {
+          throw new Error("Empty response received");
+        }
       } catch (parseError) {
         console.error("Failed to parse TikTok status response as JSON:", {
           error: parseError,
@@ -77,8 +94,11 @@ export async function POST(request: Request) {
 
         return NextResponse.json(
           {
+            status: "error",
             error: "Invalid response from TikTok",
-            details: "Failed to parse status check response as JSON",
+            details:
+              "Failed to parse status check response as JSON. Raw response: " +
+              responseText.substring(0, 100),
           },
           { status: 500 },
         );
@@ -87,14 +107,11 @@ export async function POST(request: Request) {
       // Process the status data
       if (statusData.data) {
         if (statusData.data.status === "PUBLISH_FAILED") {
-          return NextResponse.json(
-            {
-              status: "error",
-              error: "TikTok publishing failed",
-              details: JSON.stringify(statusData.data),
-            },
-            { status: 500 },
-          );
+          return NextResponse.json({
+            status: "error",
+            error: "TikTok publishing failed",
+            details: JSON.stringify(statusData.data),
+          });
         } else if (
           statusData.data.status === "PUBLISH_SUCCESSFUL" ||
           statusData.data.status === "PUBLISHED"
@@ -147,25 +164,34 @@ export async function POST(request: Request) {
       }
     } catch (statusError) {
       console.error("Error checking TikTok upload status:", statusError);
-      return NextResponse.json(
-        {
-          error: "Failed to check TikTok status",
-          details:
-            statusError instanceof Error
-              ? statusError.message
-              : "Unknown error during status check",
-        },
-        { status: 500 },
-      );
+
+      // Check if this is an AbortError (timeout)
+      if (statusError instanceof Error && statusError.name === "AbortError") {
+        return NextResponse.json(
+          {
+            status: "error",
+            error: "TikTok status check timeout",
+            details: "The status check took too long and was aborted.",
+          },
+          { status: 504 },
+        );
+      }
+
+      return NextResponse.json({
+        status: "error",
+        error: "Failed to check TikTok status",
+        details:
+          statusError instanceof Error
+            ? statusError.message
+            : "Unknown error during status check",
+      });
     }
   } catch (error: unknown) {
     console.error("Unhandled error during TikTok status check:", error);
-    return NextResponse.json(
-      {
-        error: "Status check failed",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 },
-    );
+    return NextResponse.json({
+      status: "error",
+      error: "Status check failed",
+      details: error instanceof Error ? error.message : "Unknown error",
+    });
   }
 }
