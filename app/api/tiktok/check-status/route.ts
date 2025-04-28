@@ -139,9 +139,7 @@ export async function POST(request: Request) {
             itemId: itemId,
             processingStatus: statusData.data.status,
             message: "Video successfully published to your TikTok profile!",
-            note: itemId
-              ? `Your TikTok post ID is: ${itemId}`
-              : "Check your TikTok profile to see your new video",
+            note: "Your video has been published with private (Only Me) visibility. You can change the visibility settings in the TikTok app if you want to make it public.",
           });
         } else if (statusData.data.status === "UPLOAD_SUCCESSFUL") {
           // Upload is successful but still needs to be processed for publishing
@@ -150,7 +148,7 @@ export async function POST(request: Request) {
             publishId: publishId,
             processingStatus: statusData.data.status,
             message: "Upload successful, TikTok is now processing your video.",
-            note: "Your video will be published directly to your profile once processing is complete.",
+            note: "Your video will be published with private (Only Me) visibility. You can change the visibility in the TikTok app later.",
           });
         } else if (statusData.data.status === "PROCESSING_UPLOAD") {
           // This is a common status during processing

@@ -738,6 +738,11 @@ export default function UploadForm({
                     <AlertDescription className="text-green-700">
                       Your TikTok account is connected and ready to post videos.
                       Toggle the switch to disconnect your account.
+                      <div className="mt-2 text-amber-600 text-sm">
+                        <strong>Note:</strong> Videos will be posted with
+                        private visibility (Only Me). You can change visibility
+                        settings in the TikTok app after posting.
+                      </div>
                     </AlertDescription>
                   </Alert>
                 ) : (

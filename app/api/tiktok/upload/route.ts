@@ -126,18 +126,17 @@ export async function POST(request: Request) {
         // Get response text and parse JSON
         const creatorInfoText = await creatorInfoResponse.text();
         console.log("Creator info response:", creatorInfoText);
-        const creatorInfo = JSON.parse(creatorInfoText);
         console.log("Creator info parsed successfully");
 
-        // Get the first available privacy level or default to PUBLIC_TO_EVERYONE
-        let privacyLevel = "PUBLIC_TO_EVERYONE";
-        if (
-          creatorInfo.data &&
-          creatorInfo.data.privacy_level_options &&
-          creatorInfo.data.privacy_level_options.length > 0
-        ) {
-          privacyLevel = creatorInfo.data.privacy_level_options[0];
-        }
+        // For unaudited clients, we must use SELF_ONLY (private) privacy level
+        // Force SELF_ONLY regardless of what's available in privacy_level_options
+        const privacyLevel = "SELF_ONLY";
+
+        console.log(
+          "Using privacy level:",
+          privacyLevel,
+          "(Required for unaudited TikTok API clients)",
+        );
 
         // Extract hashtags from the caption (if any)
         const hashtagRegex = /#(\w+)/g;
@@ -152,7 +151,6 @@ export async function POST(request: Request) {
 
         // Set a new timeout for the TikTok initialization
         const initController = new AbortController();
-        const initTimeoutId = setTimeout(() => initController.abort(), 8000);
 
         // Include caption, hashtags, and privacy level in the initialization request
         const initResponse = await fetch(
@@ -166,7 +164,7 @@ export async function POST(request: Request) {
             body: JSON.stringify({
               post_info: {
                 title: caption.substring(0, 2200), // Use full caption with hashtags
-                privacy_level: privacyLevel, // Use privacy level from creator info
+                privacy_level: privacyLevel, // Always use SELF_ONLY (private)
                 disable_duet: false,
                 disable_comment: false,
                 disable_stitch: false,
@@ -182,7 +180,6 @@ export async function POST(request: Request) {
             signal: initController.signal,
           },
         );
-        clearTimeout(initTimeoutId);
 
         // Safely parse the response - check content type first
         let initData;
@@ -302,7 +299,7 @@ export async function POST(request: Request) {
             mediaUrl: mediaUrl,
             message:
               "Video uploaded to TikTok and is being processed for direct posting.",
-            note: "The video will be published directly to your TikTok profile once processing is complete.",
+            note: "Your video will be posted with private (Only Me) visibility. You can change the visibility settings in the TikTok app after publishing is complete.",
           });
         } catch (uploadError) {
           clearTimeout(uploadTimeoutId);
