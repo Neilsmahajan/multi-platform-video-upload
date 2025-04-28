@@ -260,7 +260,7 @@ export default function UploadForm({
               setUploadStatus("success");
               // Add a notification that it's still processing in the background
               setErrorMessages([
-                "TikTok: Your video is being processed. It will be available in TikTok shortly.",
+                "TikTok: Your video is being processed. Check your TikTok app notifications to continue editing and publishing.",
               ]);
 
               // Start polling for status (every 2 seconds)
@@ -296,9 +296,9 @@ export default function UploadForm({
                         statusData.publishId,
                       );
 
-                      // Show user message about next steps in TikTok app
+                      // Show detailed instructions to the user
                       setErrorMessages([
-                        `TikTok: ${statusData.message} ${statusData.note || ""}`,
+                        `TikTok: ${statusData.message}${statusData.note ? `\n${statusData.note}` : ""}`,
                       ]);
 
                       // Container published successfully, no need to poll anymore
@@ -306,12 +306,25 @@ export default function UploadForm({
                     } else if (statusData.status === "processing") {
                       // Still processing, continue polling
                       console.log("TikTok upload still processing...");
+
+                      // Update the message if there are notes
+                      if (
+                        statusData.note &&
+                        statusData.note !== tiktokData.note
+                      ) {
+                        setErrorMessages([
+                          `TikTok: ${statusData.message}${statusData.note ? `\n${statusData.note}` : ""}`,
+                        ]);
+                      }
+
                       setTimeout(checkStatus, 2000);
                     } else if (statusData.status === "error") {
                       // Error occurred
                       console.error("TikTok processing error:", statusData);
                       setUploadStatus("error");
-                      setErrorMessages([`TikTok: ${statusData.error}`]);
+                      setErrorMessages([
+                        `TikTok: ${statusData.error}${statusData.details ? ` - ${statusData.details}` : ""}`,
+                      ]);
                     }
                   } else {
                     console.error("Error checking TikTok status:", statusData);
@@ -391,6 +404,13 @@ export default function UploadForm({
           <AlertDescription className="text-green-700">
             Your video has been uploaded and is being processed for publishing.
             {errorMessages.length > 0 &&
+              errorMessages[0].includes("TikTok:") && (
+                <div className="mt-2 text-amber-600 whitespace-pre-line">
+                  {errorMessages[0]}
+                </div>
+              )}
+            {errorMessages.length > 0 &&
+              !errorMessages[0].includes("TikTok:") &&
               errorMessages[0].includes("being processed") && (
                 <p className="mt-2 text-amber-600">{errorMessages[0]}</p>
               )}

@@ -92,7 +92,18 @@ export async function POST(request: Request) {
       const initController = new AbortController();
       const initTimeoutId = setTimeout(() => initController.abort(), 8000);
 
-      // Include caption and draft mode in the initialization request
+      // Extract hashtags from the caption (if any)
+      const hashtagRegex = /#(\w+)/g;
+      const hashtags = [];
+      let match;
+      while ((match = hashtagRegex.exec(caption)) !== null) {
+        hashtags.push(match[1]);
+      }
+
+      // Prepare a cleaner caption without hashtags for the title
+      const cleanCaption = caption.replace(hashtagRegex, "").trim();
+
+      // Include caption, hashtags, and draft mode in the initialization request
       const initResponse = await fetch(
         "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/",
         {
@@ -109,8 +120,16 @@ export async function POST(request: Request) {
               total_chunk_count: 1,
             },
             post_info: {
-              title: caption.substring(0, 150), // TikTok has a title/caption limit
+              title: cleanCaption.substring(0, 150), // TikTok has a title/caption limit
+              description: caption.substring(0, 2200), // Full caption with hashtags
               privacy_level: "SELF_ONLY", // Create as a draft
+              disable_duet: false,
+              disable_comment: false,
+              disable_stitch: false,
+              brand_content_toggle: false,
+              brand_organic_toggle: false,
+              hashtag_names: hashtags.length > 0 ? hashtags : undefined,
+              mention_users: [], // No user mentions
             },
           }),
           signal: initController.signal,
@@ -229,7 +248,8 @@ export async function POST(request: Request) {
           accessToken: tiktokAccount.access_token,
           mediaUrl: mediaUrl,
           message:
-            "Video uploaded to TikTok and is being processed. Please check the status for updates.",
+            "Video uploaded to TikTok and is being processed. Please check your TikTok app notifications to continue editing and publishing.",
+          note: "It may take a few minutes for the notification to appear. Check your TikTok app's notification tab and inbox.",
         });
       } catch (uploadError) {
         clearTimeout(uploadTimeoutId);
@@ -258,7 +278,7 @@ export async function POST(request: Request) {
           { status: 500 },
         );
       }
-    } catch (fetchError: unknown) {
+    } catch (fetchError) {
       clearTimeout(timeoutId);
       console.error("Error fetching video from blob:", fetchError);
 

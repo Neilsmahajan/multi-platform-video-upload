@@ -132,9 +132,8 @@ export async function POST(request: Request) {
             status: "success",
             publishId: publishId,
             processingStatus: statusData.data.status,
-            message:
-              "Video uploaded to TikTok successfully. Please check your TikTok app notifications and drafts folder to continue editing and publishing.",
-            note: "It may take a few minutes for the video to appear in your TikTok drafts.",
+            message: "Video has been uploaded to TikTok! To publish it:",
+            note: "1. Open your TikTok app\n2. Check the notification bell icon\n3. Look for a draft notification\n4. You may also find it in TikTok Studio or your drafts folder",
           });
         } else if (statusData.data.status === "UPLOAD_SUCCESSFUL") {
           // Upload is successful but still needs to be processed for publishing
@@ -143,14 +142,25 @@ export async function POST(request: Request) {
             publishId: publishId,
             processingStatus: statusData.data.status,
             message: "Upload successful, still being processed by TikTok.",
+            note: "Please be patient. Once processing completes, you'll receive a notification in the TikTok app.",
+          });
+        } else if (statusData.data.status === "PROCESSING_UPLOAD") {
+          // This is a common status during processing
+          return NextResponse.json({
+            status: "processing",
+            publishId: publishId,
+            processingStatus: statusData.data.status,
+            message: "TikTok is still processing your video upload.",
+            note: "This may take a few minutes depending on video size. When complete, check your TikTok app notifications.",
           });
         } else {
-          // Still processing
+          // Still processing with other status
           return NextResponse.json({
             status: "processing",
             publishId: publishId,
             processingStatus: statusData.data.status || "PROCESSING",
             message: "Video is still being processed by TikTok.",
+            note: "Current status: " + statusData.data.status,
           });
         }
       } else {
@@ -160,6 +170,7 @@ export async function POST(request: Request) {
           publishId: publishId,
           message:
             "Status check did not return definitive status. Still processing.",
+          note: "Please check your TikTok app notifications and drafts folder.",
         });
       }
     } catch (statusError) {
