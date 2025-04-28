@@ -114,10 +114,9 @@ export async function POST(request: Request) {
           });
         } else if (
           statusData.data.status === "PUBLISH_SUCCESSFUL" ||
-          statusData.data.status === "PUBLISHED" ||
-          statusData.data.status === "UPLOAD_SUCCESSFUL"
+          statusData.data.status === "PUBLISHED"
         ) {
-          // Delete the blob after successful upload
+          // Delete the blob after successful publish
           if (mediaUrl) {
             try {
               console.log("Deleting blob after successful upload");
@@ -139,8 +138,17 @@ export async function POST(request: Request) {
             publishId: publishId,
             itemId: itemId,
             processingStatus: statusData.data.status,
-            message: "Video successfully uploaded to your TikTok inbox!",
-            note: "Check your TikTok app notifications to edit and publish your video.",
+            message: "Video successfully published to your TikTok profile!",
+            note: "Your video has been published with private (Only Me) visibility. You can change the visibility settings in the TikTok app if you want to make it public.",
+          });
+        } else if (statusData.data.status === "UPLOAD_SUCCESSFUL") {
+          // Upload is successful but still needs to be processed for publishing
+          return NextResponse.json({
+            status: "processing",
+            publishId: publishId,
+            processingStatus: statusData.data.status,
+            message: "Upload successful, TikTok is now processing your video.",
+            note: "Your video will be published with private (Only Me) visibility. You can change the visibility in the TikTok app later.",
           });
         } else if (statusData.data.status === "PROCESSING_UPLOAD") {
           // This is a common status during processing
@@ -149,7 +157,7 @@ export async function POST(request: Request) {
             publishId: publishId,
             processingStatus: statusData.data.status,
             message: "TikTok is still processing your video upload.",
-            note: "You'll receive a notification in the TikTok app when it's ready to edit.",
+            note: "This may take a few minutes depending on video size.",
           });
         } else {
           // Still processing with other status
@@ -158,7 +166,7 @@ export async function POST(request: Request) {
             publishId: publishId,
             processingStatus: statusData.data.status || "PROCESSING",
             message: "Video is still being processed by TikTok.",
-            note: "Check your TikTok app notifications to complete the process.",
+            note: "Current status: " + statusData.data.status,
           });
         }
       } else {
