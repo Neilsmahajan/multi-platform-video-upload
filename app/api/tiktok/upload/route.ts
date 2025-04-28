@@ -126,7 +126,45 @@ export async function POST(request: Request) {
         // Get response text and parse JSON
         const creatorInfoText = await creatorInfoResponse.text();
         console.log("Creator info response:", creatorInfoText);
-        console.log("Creator info parsed successfully");
+
+        let creatorInfo;
+        try {
+          creatorInfo = JSON.parse(creatorInfoText);
+          console.log("Creator info parsed successfully");
+        } catch (parseError) {
+          console.error("Failed to parse creator info:", parseError);
+          return NextResponse.json(
+            {
+              error: "Failed to parse TikTok creator info",
+              details: "Could not parse the response from TikTok",
+            },
+            { status: 500 },
+          );
+        }
+
+        // Check if the account privacy settings allow posting with unaudited clients
+        // Unaudited clients can only post to private accounts, so we need to verify
+        // that SELF_ONLY is in the available options
+        const privacyLevelOptions =
+          creatorInfo.data?.privacy_level_options || [];
+
+        if (!privacyLevelOptions.includes("SELF_ONLY")) {
+          return NextResponse.json(
+            {
+              error: "TikTok account not set to private",
+              details:
+                "Unaudited TikTok API clients can only post to private accounts. Please set your TikTok account to private in the TikTok app before uploading. You can change it back to public after uploading if desired.",
+              setupInstructions: [
+                "1. Open the TikTok app and go to your profile",
+                "2. Tap the three lines (≡) in the top right and go to 'Settings and privacy'",
+                "3. Tap 'Privacy' and set 'Private account' to ON",
+                "4. Try uploading again after your account is set to private",
+                "5. You can change your account back to public after uploading if desired",
+              ],
+            },
+            { status: 403 },
+          );
+        }
 
         // For unaudited clients, we must use SELF_ONLY (private) privacy level
         // Force SELF_ONLY regardless of what's available in privacy_level_options
@@ -192,6 +230,29 @@ export async function POST(request: Request) {
             contentType,
             responseBody: responseText.substring(0, 500), // Log part of the body for debugging
           });
+
+          // Check specifically for the private account error
+          if (
+            responseText.includes(
+              "unaudited_client_can_only_post_to_private_accounts",
+            )
+          ) {
+            return NextResponse.json(
+              {
+                error: "TikTok account not set to private",
+                details:
+                  "Unaudited TikTok API clients can only post to private accounts. Please set your TikTok account to private in the TikTok app before uploading.",
+                setupInstructions: [
+                  "1. Open the TikTok app and go to your profile",
+                  "2. Tap the three lines (≡) in the top right and go to 'Settings and privacy'",
+                  "3. Tap 'Privacy' and set 'Private account' to ON",
+                  "4. Try uploading again after your account is set to private",
+                  "5. You can change your account back to public after uploading if desired",
+                ],
+              },
+              { status: 403 },
+            );
+          }
 
           return NextResponse.json(
             {
