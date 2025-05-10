@@ -8,17 +8,17 @@ export const config = {
 
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { prisma } from "@/lib/prisma";
+import { getValidTikTokToken } from "@/lib/tiktok";
 
 export async function POST(request: Request) {
   try {
     // Validate session
     const session = await auth();
-    if (!session || !session.user) {
+    if (!session || !session.user || !session.user.id) {
       console.error("No session or user found");
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
+  
     console.log("Processing TikTok upload for user:", session.user.id);
 
     // Parse JSON body; expects mediaUrl, caption
@@ -30,32 +30,29 @@ export async function POST(request: Request) {
       });
       return NextResponse.json(
         { error: "Missing required fields" },
-        { status: 400 },
+        { status: 400 }
       );
     }
 
     console.log("Upload request received with caption:", caption);
 
-    // Get the TikTok account for the current user
-    const tiktokAccount = await prisma.account.findFirst({
-      where: {
-        userId: session.user.id,
-        provider: "tiktok",
-      },
-    });
+    // Get a valid TikTok access token (with auto refresh)
+    const accessToken = await getValidTikTokToken(session.user.id);
 
-    if (!tiktokAccount || !tiktokAccount.access_token) {
-      console.error("TikTok account not found or missing access token", {
-        accountFound: !!tiktokAccount,
-        hasAccessToken: !!tiktokAccount?.access_token,
-      });
+    if (!accessToken) {
+      console.error("TikTok token is invalid or could not be refreshed");
       return NextResponse.json(
-        { error: "TikTok account not properly connected" },
-        { status: 401 },
+        {
+          error: "TikTok Authentication Expired",
+          details:
+            "Your TikTok access has expired or been revoked. Please reconnect your TikTok account.",
+          reconnectRequired: true,
+        },
+        { status: 401 }
       );
     }
 
-    console.log("Found TikTok account with access token");
+    console.log("Found valid TikTok token");
 
     // First, get the video file from the blob URL to determine its size
     console.log("Fetching video file from blob:", mediaUrl);
@@ -76,7 +73,7 @@ export async function POST(request: Request) {
         });
         return NextResponse.json(
           { error: "Failed to fetch video from blob storage" },
-          { status: 500 },
+          { status: 500 }
         );
       }
 
@@ -99,11 +96,11 @@ export async function POST(request: Request) {
           {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${tiktokAccount.access_token}`,
+              Authorization: `Bearer ${accessToken}`,
               "Content-Type": "application/json; charset=UTF-8",
             },
             signal: infoController.signal,
-          },
+          }
         );
         clearTimeout(infoTimeoutId);
 
@@ -114,12 +111,26 @@ export async function POST(request: Request) {
             status: creatorInfoResponse.status,
             response: errorText,
           });
+
+          // Check specifically for authentication errors
+          if (creatorInfoResponse.status === 401) {
+            return NextResponse.json(
+              {
+                error: "TikTok Authentication Expired",
+                details:
+                  "Your TikTok access has expired or been revoked. Please reconnect your TikTok account.",
+                reconnectRequired: true,
+              },
+              { status: 401 }
+            );
+          }
+
           return NextResponse.json(
             {
               error: "Failed to fetch TikTok creator info",
               details: `TikTok API returned ${creatorInfoResponse.status}: ${errorText}`,
             },
-            { status: 500 },
+            { status: 500 }
           );
         }
 
@@ -138,7 +149,7 @@ export async function POST(request: Request) {
               error: "Failed to parse TikTok creator info",
               details: "Could not parse the response from TikTok",
             },
-            { status: 500 },
+            { status: 500 }
           );
         }
 
@@ -162,7 +173,7 @@ export async function POST(request: Request) {
                 "5. You can change your account back to public after uploading if desired",
               ],
             },
-            { status: 403 },
+            { status: 403 }
           );
         }
 
@@ -173,7 +184,7 @@ export async function POST(request: Request) {
         console.log(
           "Using privacy level:",
           privacyLevel,
-          "(Required for unaudited TikTok API clients)",
+          "(Required for unaudited TikTok API clients)"
         );
 
         // Extract hashtags from the caption (if any)
@@ -196,7 +207,7 @@ export async function POST(request: Request) {
           {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${tiktokAccount.access_token}`,
+              Authorization: `Bearer ${accessToken}`,
               "Content-Type": "application/json; charset=UTF-8",
             },
             body: JSON.stringify({
@@ -216,7 +227,7 @@ export async function POST(request: Request) {
               },
             }),
             signal: initController.signal,
-          },
+          }
         );
 
         // Safely parse the response - check content type first
@@ -231,10 +242,23 @@ export async function POST(request: Request) {
             responseBody: responseText.substring(0, 500), // Log part of the body for debugging
           });
 
+          // Check for authentication errors
+          if (initResponse.status === 401) {
+            return NextResponse.json(
+              {
+                error: "TikTok Authentication Expired",
+                details:
+                  "Your TikTok access has expired or been revoked. Please reconnect your TikTok account.",
+                reconnectRequired: true,
+              },
+              { status: 401 }
+            );
+          }
+
           // Check specifically for the private account error
           if (
             responseText.includes(
-              "unaudited_client_can_only_post_to_private_accounts",
+              "unaudited_client_can_only_post_to_private_accounts"
             )
           ) {
             return NextResponse.json(
@@ -250,7 +274,7 @@ export async function POST(request: Request) {
                   "5. You can change your account back to public after uploading if desired",
                 ],
               },
-              { status: 403 },
+              { status: 403 }
             );
           }
 
@@ -261,7 +285,7 @@ export async function POST(request: Request) {
                 initResponse.status
               }: ${responseText.substring(0, 200)}`,
             },
-            { status: initResponse.status },
+            { status: initResponse.status }
           );
         }
 
@@ -279,7 +303,7 @@ export async function POST(request: Request) {
               error: "Invalid response from TikTok",
               details: "Failed to parse TikTok API response as JSON",
             },
-            { status: 500 },
+            { status: 500 }
           );
         }
 
@@ -291,7 +315,7 @@ export async function POST(request: Request) {
           console.error("Invalid response from TikTok init API:", initData);
           return NextResponse.json(
             { error: "Invalid response from TikTok" },
-            { status: 500 },
+            { status: 500 }
           );
         }
 
@@ -299,7 +323,7 @@ export async function POST(request: Request) {
         const uploadUrl = initData.data.upload_url;
         console.log(
           "TikTok direct post initialized with publish_id:",
-          publishId,
+          publishId
         );
         console.log("TikTok upload URL:", uploadUrl);
 
@@ -310,7 +334,7 @@ export async function POST(request: Request) {
         const uploadController = new AbortController();
         const uploadTimeoutId = setTimeout(
           () => uploadController.abort(),
-          8000,
+          8000
         );
 
         try {
@@ -346,7 +370,7 @@ export async function POST(request: Request) {
                 error: "Failed to upload video to TikTok",
                 details: `Upload failed with status ${uploadResponse.status}: ${uploadResponse.statusText}`,
               },
-              { status: uploadResponse.status },
+              { status: uploadResponse.status }
             );
           }
 
@@ -356,7 +380,7 @@ export async function POST(request: Request) {
           return NextResponse.json({
             status: "processing",
             publishId: publishId,
-            accessToken: tiktokAccount.access_token,
+            accessToken: accessToken,
             mediaUrl: mediaUrl,
             message:
               "Video uploaded to TikTok and is being processed for direct posting.",
@@ -377,7 +401,7 @@ export async function POST(request: Request) {
                 details:
                   "The upload to TikTok took too long and was aborted. Try with a smaller video file.",
               },
-              { status: 504 },
+              { status: 504 }
             );
           }
 
@@ -389,7 +413,7 @@ export async function POST(request: Request) {
                   ? uploadError.message
                   : "Unknown upload error",
             },
-            { status: 500 },
+            { status: 500 }
           );
         }
       } catch (infoError) {
@@ -403,7 +427,7 @@ export async function POST(request: Request) {
               error: "TikTok API timeout",
               details: "Fetching creator info took too long and was aborted",
             },
-            { status: 504 },
+            { status: 504 }
           );
         }
 
@@ -413,7 +437,7 @@ export async function POST(request: Request) {
             details:
               infoError instanceof Error ? infoError.message : "Unknown error",
           },
-          { status: 500 },
+          { status: 500 }
         );
       }
     } catch (fetchError) {
@@ -428,7 +452,7 @@ export async function POST(request: Request) {
             details:
               "Fetching the video took too long and was aborted. Try with a smaller video file.",
           },
-          { status: 504 },
+          { status: 504 }
         );
       }
 
@@ -440,7 +464,7 @@ export async function POST(request: Request) {
               ? fetchError.message
               : "Unknown fetch error",
         },
-        { status: 500 },
+        { status: 500 }
       );
     }
   } catch (error: unknown) {
@@ -450,7 +474,7 @@ export async function POST(request: Request) {
         error: "Video upload failed",
         details: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
