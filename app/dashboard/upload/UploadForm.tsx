@@ -357,8 +357,12 @@ export default function UploadForm({
             console.error("TikTok upload failed:", tiktokData);
             let errorMessage = `TikTok: ${tiktokData.error || "Unknown error"}`;
 
+            // Check if this is a token expiration error
+            if (tiktokData.errorType === "token_expired") {
+              errorMessage = `TikTok: Your TikTok authorization has expired. Please disconnect and reconnect your account.`;
+            }
             // Add details if available
-            if (tiktokData.details) {
+            else if (tiktokData.details) {
               errorMessage += ` - ${tiktokData.details}`;
               console.error("TikTok error details:", tiktokData.details);
             }
@@ -430,6 +434,35 @@ export default function UploadForm({
                   <li key={index}>{error}</li>
                 ))}
               </ul>
+            )}
+
+            {/* TikTok token expired error */}
+            {errorMessages.some(
+              (msg) =>
+                msg.includes("TikTok token expired") ||
+                msg.includes("TikTok: Your TikTok authorization has expired"),
+            ) && (
+              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md">
+                <h4 className="font-medium text-amber-800 mb-2">
+                  TikTok Account Reconnection Required
+                </h4>
+                <p className="text-amber-700 mb-2">
+                  Your TikTok authorization has expired. Please follow these
+                  steps to reconnect:
+                </p>
+                <ol className="list-decimal list-inside text-amber-700 space-y-1">
+                  <li>Go to the TikTok tab on this page</li>
+                  <li>Toggle the switch to disconnect your account</li>
+                  <li>
+                    Toggle the switch again to reconnect your TikTok account
+                  </li>
+                  <li>Try uploading again after reconnecting</li>
+                </ol>
+                <p className="text-amber-700 mt-2 text-sm">
+                  Note: TikTok access tokens periodically expire and require
+                  reconnection.
+                </p>
+              </div>
             )}
 
             {/* Display setup instructions for Instagram errors */}

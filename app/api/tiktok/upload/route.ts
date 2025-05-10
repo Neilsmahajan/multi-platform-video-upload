@@ -114,6 +114,24 @@ export async function POST(request: Request) {
             status: creatorInfoResponse.status,
             response: errorText,
           });
+
+          // Check for invalid access token error
+          if (
+            creatorInfoResponse.status === 401 &&
+            errorText.includes("access_token_invalid")
+          ) {
+            return NextResponse.json(
+              {
+                error: "TikTok token expired",
+                errorType: "token_expired",
+                details:
+                  "Your TikTok authorization has expired. Please disconnect and reconnect your TikTok account.",
+                action: "reconnect",
+              },
+              { status: 401 },
+            );
+          }
+
           return NextResponse.json(
             {
               error: "Failed to fetch TikTok creator info",
