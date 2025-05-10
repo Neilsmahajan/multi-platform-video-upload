@@ -47,9 +47,14 @@ export default function UploadForm({
   const [errorMessages, setErrorMessages] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<string>("youtube");
 
-  // Initialize connection state from props
-  const [instagramConnected] = useState(initialInstagramConnected);
-  const [tiktokConnected] = useState(initialTiktokConnected);
+  const [connectStatus, setConnectStatus] = useState<{
+    tiktok: boolean;
+    instagram: boolean;
+  }>({
+    tiktok: initialTiktokConnected,
+    instagram: initialInstagramConnected,
+  });
+
   const [connecting, setConnecting] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -80,6 +85,8 @@ export default function UploadForm({
     } else {
       router.push("/api/auth/disconnect/tiktok");
     }
+
+    setConnectStatus((prev) => ({ ...prev, tiktok: checked }));
   };
 
   const handleTabChange = (value: string) => {
@@ -93,7 +100,6 @@ export default function UploadForm({
     setErrorMessages([]);
 
     try {
-      // First, upload directly to Vercel Blob
       console.log(`Starting file upload to Vercel Blob for ${platform}`);
       const blobResult = await upload(file.name, file, {
         access: "public",
@@ -101,7 +107,6 @@ export default function UploadForm({
       });
       console.log("File uploaded to Vercel Blob successfully", blobResult);
 
-      // Platform-specific upload logic
       let uploadSuccess = false;
       const uploadErrors = [];
 
@@ -136,7 +141,7 @@ export default function UploadForm({
             `YouTube: ${error instanceof Error ? error.message : "Unknown error"}`,
           );
         }
-      } else if (platform === "instagram" && instagramConnected) {
+      } else if (platform === "instagram" && connectStatus.instagram) {
         try {
           const instagramRes = await fetch("/api/instagram/upload", {
             method: "POST",
@@ -154,14 +159,11 @@ export default function UploadForm({
               instagramData.status === "processing" &&
               instagramData.containerId
             ) {
-              // Container created, now poll for status
               setUploadStatus("success");
-              // Add a notification that it's still processing in the background
               setErrorMessages([
                 "Instagram: Your video is being processed. It will appear on Instagram shortly.",
               ]);
 
-              // Start polling for container status (every 2 seconds)
               const checkStatus = async () => {
                 try {
                   const statusRes = await fetch("/api/instagram/check-status", {
@@ -170,7 +172,7 @@ export default function UploadForm({
                     body: JSON.stringify({
                       containerId: instagramData.containerId,
                       igBusinessAccountId: instagramData.igBusinessAccountId,
-                      mediaUrl: blobResult.url, // Pass this to clean up the blob after publishing
+                      mediaUrl: blobResult.url,
                     }),
                   });
 
@@ -182,10 +184,8 @@ export default function UploadForm({
                         "Instagram upload complete, mediaId:",
                         statusData.mediaId,
                       );
-                      // Container published successfully, no need to poll anymore
                       return;
                     } else if (statusData.status === "processing") {
-                      // Still processing, continue polling
                       console.log("Instagram container still processing...");
                       setTimeout(checkStatus, 2000);
                     }
@@ -194,21 +194,16 @@ export default function UploadForm({
                       "Error checking Instagram status:",
                       statusData,
                     );
-                    // If there's an error, stop polling
                   }
                 } catch (error) {
                   console.error("Error in status check:", error);
-                  // If there's an error, stop polling
                 }
               };
 
-              // Start the polling process
               checkStatus();
 
-              // Mark this as successful for the UI since we've started the background process
               uploadSuccess = true;
             } else if (instagramData.mediaId) {
-              // Direct success (unlikely with our new approach but keep for compatibility)
               uploadSuccess = true;
             }
           } else {
@@ -226,7 +221,7 @@ export default function UploadForm({
             `Instagram: ${error instanceof Error ? error.message : "Unknown error"}`,
           );
         }
-      } else if (platform === "tiktok" && tiktokConnected) {
+      } else if (platform === "tiktok" && connectStatus.tiktok) {
         try {
           console.log("Starting TikTok upload with blob URL:", blobResult.url);
           const tiktokRes = await fetch("/api/tiktok/upload", {
@@ -238,7 +233,6 @@ export default function UploadForm({
             }),
           });
 
-          // First try to parse the response as JSON
           let tiktokData;
           try {
             tiktokData = await tiktokRes.json();
@@ -247,7 +241,6 @@ export default function UploadForm({
               "Failed to parse TikTok response as JSON:",
               jsonError,
             );
-            // If we can't parse JSON, get the response text
             const errorText = await tiktokRes.text();
             throw new Error(
               `TikTok API returned non-JSON response: ${errorText.substring(0, 100)}`,
@@ -256,14 +249,11 @@ export default function UploadForm({
 
           if (tiktokRes.ok) {
             if (tiktokData.status === "processing" && tiktokData.publishId) {
-              // Similar to Instagram, start a polling process for status
               setUploadStatus("success");
-              // Add a notification that it's still processing in the background
               setErrorMessages([
                 "TikTok: Your video is being processed. Check your TikTok app notifications to continue editing and publishing.",
               ]);
 
-              // Start polling for status (every 2 seconds)
               const checkStatus = async () => {
                 try {
                   const statusRes = await fetch("/api/tiktok/check-status", {
@@ -272,7 +262,7 @@ export default function UploadForm({
                     body: JSON.stringify({
                       publishId: tiktokData.publishId,
                       accessToken: tiktokData.accessToken,
-                      mediaUrl: blobResult.url, // Pass this to clean up the blob after publishing
+                      mediaUrl: blobResult.url,
                     }),
                   });
 
@@ -296,18 +286,14 @@ export default function UploadForm({
                         statusData.publishId,
                       );
 
-                      // Show detailed instructions to the user
                       setErrorMessages([
                         `TikTok: ${statusData.message}${statusData.note ? `\n${statusData.note}` : ""}`,
                       ]);
 
-                      // Container published successfully, no need to poll anymore
                       return;
                     } else if (statusData.status === "processing") {
-                      // Still processing, continue polling
                       console.log("TikTok upload still processing...");
 
-                      // Update the message if there are notes
                       if (
                         statusData.note &&
                         statusData.note !== tiktokData.note
@@ -319,7 +305,6 @@ export default function UploadForm({
 
                       setTimeout(checkStatus, 2000);
                     } else if (statusData.status === "error") {
-                      // Error occurred
                       console.error("TikTok processing error:", statusData);
                       setUploadStatus("error");
                       setErrorMessages([
@@ -328,11 +313,9 @@ export default function UploadForm({
                     }
                   } else {
                     console.error("Error checking TikTok status:", statusData);
-                    // If there's an error, stop polling
                   }
                 } catch (error) {
                   console.error("Error in TikTok status check:", error);
-                  // Show the error in the UI
                   setUploadStatus("error");
                   setErrorMessages([
                     `TikTok status check failed: ${error instanceof Error ? error.message : "Unknown error"}`,
@@ -340,13 +323,10 @@ export default function UploadForm({
                 }
               };
 
-              // Start the polling process
               checkStatus();
 
-              // Mark this as successful for the UI since we've started the background process
               uploadSuccess = true;
             } else if (tiktokData.publishId) {
-              // Direct success (unlikely with our new approach but keep for compatibility)
               uploadSuccess = true;
 
               if (tiktokData.message) {
@@ -355,15 +335,31 @@ export default function UploadForm({
             }
           } else {
             console.error("TikTok upload failed:", tiktokData);
-            let errorMessage = `TikTok: ${tiktokData.error || "Unknown error"}`;
 
-            // Add details if available
-            if (tiktokData.details) {
-              errorMessage += ` - ${tiktokData.details}`;
-              console.error("TikTok error details:", tiktokData.details);
+            if (tiktokData.needsReconnect) {
+              setConnectStatus((prev) => ({ ...prev, tiktok: false }));
+
+              let errorMessage = "Your TikTok account needs to be reconnected.";
+              if (tiktokData.details) {
+                errorMessage += ` ${tiktokData.details}`;
+              }
+
+              uploadErrors.push(errorMessage);
+              setUploadStatus("error");
+
+              uploadErrors.push(
+                "Please reconnect your TikTok account by toggling the switch above and authorizing again.",
+              );
+            } else {
+              let errorMessage = `TikTok: ${tiktokData.error || "Unknown error"}`;
+
+              if (tiktokData.details) {
+                errorMessage += ` - ${tiktokData.details}`;
+                console.error("TikTok error details:", tiktokData.details);
+              }
+
+              uploadErrors.push(errorMessage);
             }
-
-            uploadErrors.push(errorMessage);
           }
         } catch (error) {
           console.error("Error uploading to TikTok:", error);
@@ -373,14 +369,12 @@ export default function UploadForm({
         }
       }
 
-      // Set upload status based on results
       if (uploadSuccess) {
         setUploadStatus("success");
-        // Clear form fields
         setFile(null);
         setTitle("");
         setDescription("");
-      } else {
+      } else if (uploadErrors.length > 0 && !uploadSuccess) {
         setUploadStatus("error");
         setErrorMessages(uploadErrors);
         console.error("Upload errors:", uploadErrors);
@@ -432,7 +426,31 @@ export default function UploadForm({
               </ul>
             )}
 
-            {/* Display setup instructions for Instagram errors */}
+            {errorMessages.some((msg) =>
+              msg.includes("TikTok account needs to be reconnected"),
+            ) && (
+              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md">
+                <h4 className="font-medium text-amber-800 mb-2">
+                  TikTok Account Reconnection Needed
+                </h4>
+                <p className="text-amber-700 mb-2">
+                  Your TikTok access token has expired. Please reconnect:
+                </p>
+                <ol className="list-decimal list-inside text-amber-700">
+                  <li>Toggle the TikTok switch above to connect</li>
+                  <li>Follow the TikTok authorization process</li>
+                  <li>Try uploading again after reconnecting</li>
+                </ol>
+                <Button
+                  variant="outline"
+                  className="mt-3 bg-white text-amber-800 border-amber-300 hover:bg-amber-50"
+                  onClick={() => handleTikTokConnection(true)}
+                >
+                  Reconnect TikTok Account
+                </Button>
+              </div>
+            )}
+
             {errorMessages.some(
               (msg) =>
                 msg.includes("Instagram Professional Account Required") ||
@@ -631,21 +649,23 @@ export default function UploadForm({
                   <div className="flex items-center gap-2">
                     <span
                       className={`text-sm font-medium ${
-                        instagramConnected ? "text-green-600" : "text-red-600"
+                        connectStatus.instagram
+                          ? "text-green-600"
+                          : "text-red-600"
                       }`}
                     >
-                      {instagramConnected ? "Connected" : "Not Connected"}
+                      {connectStatus.instagram ? "Connected" : "Not Connected"}
                     </span>
                     <Switch
                       id="instagram-publish"
                       disabled={connecting || status !== "authenticated"}
-                      checked={instagramConnected}
+                      checked={connectStatus.instagram}
                       onCheckedChange={handleInstagramConnection}
                     />
                   </div>
                 </div>
 
-                {instagramConnected ? (
+                {connectStatus.instagram ? (
                   <Alert className="bg-green-50 border-green-200">
                     <CheckCircle2 className="h-4 w-4 text-green-600" />
                     <AlertTitle className="text-green-800">
@@ -678,7 +698,7 @@ export default function UploadForm({
                   <Button
                     onClick={() => handleUpload("instagram")}
                     disabled={
-                      !file || isUploading || !title || !instagramConnected
+                      !file || isUploading || !title || !connectStatus.instagram
                     }
                   >
                     {isUploading && activeTab === "instagram" ? (
@@ -715,21 +735,21 @@ export default function UploadForm({
                   <div className="flex items-center gap-2">
                     <span
                       className={`text-sm font-medium ${
-                        tiktokConnected ? "text-green-600" : "text-red-600"
+                        connectStatus.tiktok ? "text-green-600" : "text-red-600"
                       }`}
                     >
-                      {tiktokConnected ? "Connected" : "Not Connected"}
+                      {connectStatus.tiktok ? "Connected" : "Not Connected"}
                     </span>
                     <Switch
                       id="tiktok-publish"
                       disabled={connecting || status !== "authenticated"}
-                      checked={tiktokConnected}
+                      checked={connectStatus.tiktok}
                       onCheckedChange={handleTikTokConnection}
                     />
                   </div>
                 </div>
 
-                {tiktokConnected ? (
+                {connectStatus.tiktok ? (
                   <Alert className="bg-green-50 border-green-200">
                     <CheckCircle2 className="h-4 w-4 text-green-600" />
                     <AlertTitle className="text-green-800">
@@ -762,7 +782,7 @@ export default function UploadForm({
                   <Button
                     onClick={() => handleUpload("tiktok")}
                     disabled={
-                      !file || isUploading || !title || !tiktokConnected
+                      !file || isUploading || !title || !connectStatus.tiktok
                     }
                   >
                     {isUploading && activeTab === "tiktok" ? (

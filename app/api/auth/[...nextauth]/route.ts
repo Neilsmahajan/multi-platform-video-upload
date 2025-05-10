@@ -15,6 +15,9 @@ declare module "next-auth" {
     userId?: string;
     provider?: string;
     providerAccountId?: string;
+    refreshToken?: string;
+    accessToken?: string;
+    accessTokenExpires?: number;
   }
 }
 
