@@ -62,7 +62,7 @@ export async function POST(request: Request) {
 
     // Use a timeout for fetch operations
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout for larger files
 
     try {
       const videoResponse = await fetch(mediaUrl, {
@@ -84,6 +84,15 @@ export async function POST(request: Request) {
       const videoBuffer = await videoResponse.arrayBuffer();
       const videoSize = videoBuffer.byteLength;
       console.log("Video size:", videoSize, "bytes");
+
+      // Define a reasonable chunk size (4MB)
+      const MAX_CHUNK_SIZE = 4 * 1024 * 1024; // 4MB in bytes
+      const chunkSize = Math.min(videoSize, MAX_CHUNK_SIZE);
+      const totalChunks = Math.ceil(videoSize / chunkSize);
+
+      console.log(
+        `Using chunk size: ${chunkSize} bytes, total chunks: ${totalChunks}`,
+      );
 
       // First fetch creator info directly from TikTok API
       console.log("Fetching TikTok creator info");
@@ -207,6 +216,7 @@ export async function POST(request: Request) {
 
         // Set a new timeout for the TikTok initialization
         const initController = new AbortController();
+        const initTimeoutId = setTimeout(() => initController.abort(), 10000);
 
         // Include caption, hashtags, and privacy level in the initialization request
         const initResponse = await fetch(
@@ -229,13 +239,14 @@ export async function POST(request: Request) {
               source_info: {
                 source: "FILE_UPLOAD",
                 video_size: videoSize,
-                chunk_size: videoSize,
-                total_chunk_count: 1,
+                chunk_size: chunkSize,
+                total_chunk_count: totalChunks,
               },
             }),
             signal: initController.signal,
           },
         );
+        clearTimeout(initTimeoutId);
 
         // Safely parse the response - check content type first
         let initData;
@@ -324,92 +335,200 @@ export async function POST(request: Request) {
         // Step 2: Upload the video file to TikTok's provided URL
         console.log("Uploading video to TikTok...");
 
-        // Set a new timeout for the upload operation
-        const uploadController = new AbortController();
-        const uploadTimeoutId = setTimeout(
-          () => uploadController.abort(),
-          8000,
-        );
+        if (totalChunks === 1) {
+          // Single chunk upload (simple case)
+          const uploadController = new AbortController();
+          const uploadTimeoutId = setTimeout(
+            () => uploadController.abort(),
+            30000,
+          ); // Longer timeout for larger files
 
-        try {
-          const uploadResponse = await fetch(uploadUrl, {
-            method: "PUT",
-            headers: {
-              "Content-Type":
-                videoResponse.headers.get("content-type") || "video/mp4",
-              "Content-Range": `bytes 0-${videoSize - 1}/${videoSize}`,
-            },
-            body: new Uint8Array(videoBuffer),
-            signal: uploadController.signal,
-          });
-          clearTimeout(uploadTimeoutId);
+          try {
+            const uploadResponse = await fetch(uploadUrl, {
+              method: "PUT",
+              headers: {
+                "Content-Type":
+                  videoResponse.headers.get("content-type") || "video/mp4",
+                "Content-Range": `bytes 0-${videoSize - 1}/${videoSize}`,
+              },
+              body: new Uint8Array(videoBuffer),
+              signal: uploadController.signal,
+            });
+            clearTimeout(uploadTimeoutId);
 
-          if (!uploadResponse.ok) {
-            // Try to get response text - this might be HTML or another format
-            let uploadError;
-            try {
-              uploadError = await uploadResponse.text();
-            } catch {
-              uploadError = "Could not read error response";
+            if (!uploadResponse.ok) {
+              // Try to get response text - this might be HTML or another format
+              let uploadError;
+              try {
+                uploadError = await uploadResponse.text();
+              } catch {
+                uploadError = "Could not read error response";
+              }
+
+              console.error("Failed to upload video to TikTok:", {
+                status: uploadResponse.status,
+                statusText: uploadResponse.statusText,
+                errorText: uploadError.substring(0, 500),
+              });
+
+              return NextResponse.json(
+                {
+                  error: "Failed to upload video to TikTok",
+                  details: `Upload failed with status ${uploadResponse.status}: ${uploadResponse.statusText}`,
+                },
+                { status: uploadResponse.status },
+              );
             }
 
-            console.error("Failed to upload video to TikTok:", {
-              status: uploadResponse.status,
-              statusText: uploadResponse.statusText,
-              errorText: uploadError.substring(0, 500),
-            });
+            console.log("Video successfully uploaded to TikTok");
+          } catch (uploadError) {
+            clearTimeout(uploadTimeoutId);
+            console.error("Error during video upload to TikTok:", uploadError);
+
+            // Check if this is an AbortError (timeout)
+            if (
+              uploadError instanceof Error &&
+              uploadError.name === "AbortError"
+            ) {
+              return NextResponse.json(
+                {
+                  error: "TikTok upload timeout",
+                  details:
+                    "The upload to TikTok took too long and was aborted. Try with a smaller video file.",
+                },
+                { status: 504 },
+              );
+            }
 
             return NextResponse.json(
               {
                 error: "Failed to upload video to TikTok",
-                details: `Upload failed with status ${uploadResponse.status}: ${uploadResponse.statusText}`,
-              },
-              { status: uploadResponse.status },
-            );
-          }
-
-          console.log("Video successfully uploaded to TikTok");
-
-          // Return immediately with the publishId
-          return NextResponse.json({
-            status: "processing",
-            publishId: publishId,
-            accessToken: tiktokAccount.access_token,
-            mediaUrl: mediaUrl,
-            message:
-              "Video uploaded to TikTok and is being processed for direct posting.",
-            note: "Your video will be posted with private (Only Me) visibility. You can change the visibility settings in the TikTok app after publishing is complete.",
-          });
-        } catch (uploadError) {
-          clearTimeout(uploadTimeoutId);
-          console.error("Error during video upload to TikTok:", uploadError);
-
-          // Check if this is an AbortError (timeout)
-          if (
-            uploadError instanceof Error &&
-            uploadError.name === "AbortError"
-          ) {
-            return NextResponse.json(
-              {
-                error: "TikTok upload timeout",
                 details:
-                  "The upload to TikTok took too long and was aborted. Try with a smaller video file.",
+                  uploadError instanceof Error
+                    ? uploadError.message
+                    : "Unknown upload error",
               },
-              { status: 504 },
+              { status: 500 },
             );
           }
+        } else {
+          // Multi-chunk upload
+          console.log(`Starting multi-chunk upload with ${totalChunks} chunks`);
 
-          return NextResponse.json(
-            {
-              error: "Failed to upload video to TikTok",
-              details:
-                uploadError instanceof Error
-                  ? uploadError.message
-                  : "Unknown upload error",
-            },
-            { status: 500 },
-          );
+          // Upload each chunk separately
+          for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+            const start = chunkIndex * chunkSize;
+            const end = Math.min(start + chunkSize - 1, videoSize - 1);
+
+            // Extract the chunk from the video buffer
+            const chunk = new Uint8Array(videoBuffer.slice(start, end + 1));
+
+            console.log(
+              `Uploading chunk ${
+                chunkIndex + 1
+              }/${totalChunks}, bytes ${start}-${end}/${videoSize}`,
+            );
+
+            // Set a timeout for this chunk upload
+            const chunkController = new AbortController();
+            const chunkTimeoutId = setTimeout(
+              () => chunkController.abort(),
+              30000,
+            ); // 30 seconds per chunk
+
+            try {
+              const chunkResponse = await fetch(uploadUrl, {
+                method: "PUT",
+                headers: {
+                  "Content-Type":
+                    videoResponse.headers.get("content-type") || "video/mp4",
+                  "Content-Range": `bytes ${start}-${end}/${videoSize}`,
+                },
+                body: chunk,
+                signal: chunkController.signal,
+              });
+              clearTimeout(chunkTimeoutId);
+
+              if (!chunkResponse.ok) {
+                // Try to get response text
+                let chunkError;
+                try {
+                  chunkError = await chunkResponse.text();
+                } catch {
+                  chunkError = "Could not read error response";
+                }
+
+                console.error(`Failed to upload chunk ${chunkIndex + 1}:`, {
+                  status: chunkResponse.status,
+                  statusText: chunkResponse.statusText,
+                  errorText: chunkError.substring(0, 200),
+                });
+
+                return NextResponse.json(
+                  {
+                    error: "Failed to upload video chunk to TikTok",
+                    details: `Chunk ${
+                      chunkIndex + 1
+                    } upload failed with status ${chunkResponse.status}: ${
+                      chunkResponse.statusText
+                    }`,
+                  },
+                  { status: chunkResponse.status },
+                );
+              }
+
+              console.log(
+                `Chunk ${chunkIndex + 1}/${totalChunks} uploaded successfully`,
+              );
+            } catch (chunkError) {
+              clearTimeout(chunkTimeoutId);
+              console.error(
+                `Error uploading chunk ${chunkIndex + 1}:`,
+                chunkError,
+              );
+
+              // Check if this is an AbortError (timeout)
+              if (
+                chunkError instanceof Error &&
+                chunkError.name === "AbortError"
+              ) {
+                return NextResponse.json(
+                  {
+                    error: "TikTok chunk upload timeout",
+                    details: `Chunk ${
+                      chunkIndex + 1
+                    } upload took too long and was aborted.`,
+                  },
+                  { status: 504 },
+                );
+              }
+
+              return NextResponse.json(
+                {
+                  error: "Failed to upload video chunk to TikTok",
+                  details:
+                    chunkError instanceof Error
+                      ? chunkError.message
+                      : "Unknown chunk upload error",
+                },
+                { status: 500 },
+              );
+            }
+          }
+
+          console.log("All chunks uploaded successfully");
         }
+
+        // Return immediately with the publishId
+        return NextResponse.json({
+          status: "processing",
+          publishId: publishId,
+          accessToken: tiktokAccount.access_token,
+          mediaUrl: mediaUrl,
+          message:
+            "Video uploaded to TikTok and is being processed for direct posting.",
+          note: "Your video will be posted with private (Only Me) visibility. You can change the visibility settings in the TikTok app after publishing is complete.",
+        });
       } catch (infoError) {
         clearTimeout(infoTimeoutId);
         console.error("Error fetching TikTok creator info:", infoError);
