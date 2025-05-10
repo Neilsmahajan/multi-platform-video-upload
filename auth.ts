@@ -30,10 +30,10 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       checks: ["state"],
       async [customFetch](
         input: RequestInfo | URL,
-        init?: RequestInit
+        init?: RequestInit,
       ): Promise<Response> {
         const url = new URL(
-          input instanceof Request ? input.url : input.toString()
+          input instanceof Request ? input.url : input.toString(),
         );
 
         // Add debug logs
@@ -60,7 +60,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
           try {
             console.log(
               "Instagram token request params:",
-              Object.fromEntries(formData.entries())
+              Object.fromEntries(formData.entries()),
             );
 
             const response = await fetch(url, {
@@ -79,7 +79,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
                 {
                   status: response.status,
                   headers: { "Content-Type": "application/json" },
-                }
+                },
               );
             }
 
@@ -103,7 +103,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
               {
                 status: 500,
                 headers: { "Content-Type": "application/json" },
-              }
+              },
             );
           }
         }
@@ -116,8 +116,8 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
             "Authorization" in init.headers
               ? (init.headers as Record<string, string>)["Authorization"]
               : init?.headers instanceof Headers
-              ? init.headers.get("Authorization")
-              : undefined
+                ? init.headers.get("Authorization")
+                : undefined
             )
               ?.toString()
               ?.replace("Bearer ", "") ||
@@ -169,10 +169,10 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       },
       async [customFetch](
         input: RequestInfo | URL,
-        init?: RequestInit
+        init?: RequestInit,
       ): Promise<Response> {
         const url = new URL(
-          input instanceof Request ? input.url : input.toString()
+          input instanceof Request ? input.url : input.toString(),
         );
         if (url.pathname.endsWith("/token/")) {
           const customHeaders = {
@@ -189,19 +189,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
             body: customBody.toString(),
           });
           const json = await response.json();
-
-          // Add logging to see the token response
-          console.log("TikTok token response:", json);
-
-          // Calculate expiration time from expires_in (default to 2 hours if not provided)
-          const expiresIn = json.expires_in || 7200; // Default to 2 hours
-          const expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
-
-          // Add expires_at to the response for AuthJS to store
-          return Response.json({
-            ...json,
-            expires_at: expiresAt,
-          });
+          return Response.json({ ...json });
         }
         return fetch(input, init);
       },

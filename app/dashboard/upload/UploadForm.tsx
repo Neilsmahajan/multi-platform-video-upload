@@ -363,22 +363,6 @@ export default function UploadForm({
               console.error("TikTok error details:", tiktokData.details);
             }
 
-            // Handle reconnection required case
-            if (tiktokData.reconnectRequired) {
-              errorMessage = `TikTok: Your TikTok connection has expired. Please reconnect your account.`;
-
-              // Show a reconnect button
-              setUploadStatus("error");
-              setErrorMessages([
-                errorMessage,
-                "RECONNECT_TIKTOK" // Special flag for UI to show reconnect button
-              ]);
-
-              // Don't continue processing
-              setIsUploading(false);
-              return;
-            }
-
             uploadErrors.push(errorMessage);
           }
         } catch (error) {
@@ -442,30 +426,10 @@ export default function UploadForm({
             <p>There was an error uploading your video. Please try again.</p>
             {errorMessages.length > 0 && (
               <ul className="mt-2 list-disc list-inside">
-                {errorMessages
-                  .filter(msg => !msg.startsWith("RECONNECT_"))
-                  .map((error, index) => (
-                    <li key={index}>{error}</li>
-                  ))}
+                {errorMessages.map((error, index) => (
+                  <li key={index}>{error}</li>
+                ))}
               </ul>
-            )}
-
-            {/* Show reconnect button for TikTok if needed */}
-            {errorMessages.includes("RECONNECT_TIKTOK") && (
-              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md">
-                <h4 className="font-medium text-amber-800 mb-2">
-                  TikTok Authentication Expired
-                </h4>
-                <p className="text-amber-700 mb-3">
-                  Your TikTok connection has expired. Please reconnect your account to continue uploading.
-                </p>
-                <Button
-                  onClick={() => handleTikTokConnection(true)}
-                  className="bg-amber-600 hover:bg-amber-700"
-                >
-                  Reconnect TikTok
-                </Button>
-              </div>
             )}
 
             {/* Display setup instructions for Instagram errors */}
@@ -474,28 +438,28 @@ export default function UploadForm({
                 msg.includes("Instagram Professional Account Required") ||
                 msg.includes("Instagram Business Account Required"),
             ) && (
-                <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md">
-                  <h4 className="font-medium text-amber-800 mb-2">
-                    Instagram Professional Account Required
-                  </h4>
-                  <p className="text-amber-700 mb-2">
-                    To publish videos to Instagram, you need:
-                  </p>
-                  <ol className="list-decimal list-inside text-amber-700">
-                    <li>
-                      An Instagram Professional account (Business or Creator)
-                    </li>
-                  </ol>
-                  <a
-                    href="https://help.instagram.com/502981923235522"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline mt-2 inline-block"
-                  >
-                    Learn how to convert to a Professional account
-                  </a>
-                </div>
-              )}
+              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md">
+                <h4 className="font-medium text-amber-800 mb-2">
+                  Instagram Professional Account Required
+                </h4>
+                <p className="text-amber-700 mb-2">
+                  To publish videos to Instagram, you need:
+                </p>
+                <ol className="list-decimal list-inside text-amber-700">
+                  <li>
+                    An Instagram Professional account (Business or Creator)
+                  </li>
+                </ol>
+                <a
+                  href="https://help.instagram.com/502981923235522"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:underline mt-2 inline-block"
+                >
+                  Learn how to convert to a Professional account
+                </a>
+              </div>
+            )}
           </AlertDescription>
         </Alert>
       )}
@@ -666,8 +630,9 @@ export default function UploadForm({
                   </div>
                   <div className="flex items-center gap-2">
                     <span
-                      className={`text-sm font-medium ${instagramConnected ? "text-green-600" : "text-red-600"
-                        }`}
+                      className={`text-sm font-medium ${
+                        instagramConnected ? "text-green-600" : "text-red-600"
+                      }`}
                     >
                       {instagramConnected ? "Connected" : "Not Connected"}
                     </span>
@@ -749,8 +714,9 @@ export default function UploadForm({
                   </div>
                   <div className="flex items-center gap-2">
                     <span
-                      className={`text-sm font-medium ${tiktokConnected ? "text-green-600" : "text-red-600"
-                        }`}
+                      className={`text-sm font-medium ${
+                        tiktokConnected ? "text-green-600" : "text-red-600"
+                      }`}
                     >
                       {tiktokConnected ? "Connected" : "Not Connected"}
                     </span>

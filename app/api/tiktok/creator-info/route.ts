@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { getValidTikTokToken } from "@/lib/tiktok";
+import { prisma } from "@/lib/prisma";
 
 export async function POST() {
   try {
@@ -11,19 +11,22 @@ export async function POST() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get a valid TikTok access token (with auto refresh)
-    const accessToken = await getValidTikTokToken(session.user.id!);
+    // Get the TikTok account for the current user
+    const tiktokAccount = await prisma.account.findFirst({
+      where: {
+        userId: session.user.id,
+        provider: "tiktok",
+      },
+    });
 
-    if (!accessToken) {
-      console.error("TikTok token is invalid or could not be refreshed");
+    if (!tiktokAccount || !tiktokAccount.access_token) {
+      console.error("TikTok account not found or missing access token", {
+        accountFound: !!tiktokAccount,
+        hasAccessToken: !!tiktokAccount?.access_token,
+      });
       return NextResponse.json(
-        {
-          error: "TikTok Authentication Expired",
-          details:
-            "Your TikTok access has expired or been revoked. Please reconnect your TikTok account.",
-          reconnectRequired: true,
-        },
-        { status: 401 }
+        { error: "TikTok account not properly connected" },
+        { status: 401 },
       );
     }
 
@@ -40,11 +43,11 @@ export async function POST() {
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${accessToken}`,
+            Authorization: `Bearer ${tiktokAccount.access_token}`,
             "Content-Type": "application/json; charset=UTF-8",
           },
           signal: controller.signal,
-        }
+        },
       );
       clearTimeout(timeoutId);
 
@@ -53,25 +56,12 @@ export async function POST() {
       console.log("TikTok creator info response:", responseText);
 
       if (!infoResponse.ok) {
-        // Check specifically for authentication errors
-        if (infoResponse.status === 401) {
-          return NextResponse.json(
-            {
-              error: "TikTok Authentication Expired",
-              details:
-                "Your TikTok access has expired or been revoked. Please reconnect your TikTok account.",
-              reconnectRequired: true,
-            },
-            { status: 401 }
-          );
-        }
-
         return NextResponse.json(
           {
             error: "Failed to fetch TikTok creator info",
             details: `TikTok API returned ${infoResponse.status}: ${responseText}`,
           },
-          { status: infoResponse.status }
+          { status: infoResponse.status },
         );
       }
 
@@ -87,7 +77,7 @@ export async function POST() {
             error: "Invalid response from TikTok",
             details: "Failed to parse TikTok API response as JSON",
           },
-          { status: 500 }
+          { status: 500 },
         );
       }
     } catch (fetchError) {
@@ -101,7 +91,7 @@ export async function POST() {
             error: "TikTok API timeout",
             details: "Fetching creator info took too long and was aborted",
           },
-          { status: 504 }
+          { status: 504 },
         );
       }
 
@@ -113,7 +103,7 @@ export async function POST() {
               ? fetchError.message
               : "Unknown fetch error",
         },
-        { status: 500 }
+        { status: 500 },
       );
     }
   } catch (error: unknown) {
@@ -123,7 +113,7 @@ export async function POST() {
         error: "Failed to fetch creator info",
         details: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
