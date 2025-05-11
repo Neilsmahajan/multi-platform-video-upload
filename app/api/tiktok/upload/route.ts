@@ -10,11 +10,6 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
-// TikTok video upload limits
-// const MAX_RECOMMENDED_SIZE = 50 * 1024 * 1024; // 50MB recommended max
-// const MAX_ALLOWED_SIZE = 100 * 1024 * 1024; // 100MB hard limit
-// const MAX_CHUNKS_ALLOWED = 10; // TikTok seems to limit chunks
-
 export async function POST(request: Request) {
   try {
     // Validate session
@@ -35,7 +30,7 @@ export async function POST(request: Request) {
       });
       return NextResponse.json(
         { error: "Missing required fields" },
-        { status: 400 },
+        { status: 400 }
       );
     }
 
@@ -56,7 +51,7 @@ export async function POST(request: Request) {
       });
       return NextResponse.json(
         { error: "TikTok account not properly connected" },
-        { status: 401 },
+        { status: 401 }
       );
     }
 
@@ -67,7 +62,7 @@ export async function POST(request: Request) {
 
     // Use a timeout for fetch operations
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout for larger files
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
 
     try {
       const videoResponse = await fetch(mediaUrl, {
@@ -81,7 +76,7 @@ export async function POST(request: Request) {
         });
         return NextResponse.json(
           { error: "Failed to fetch video from blob storage" },
-          { status: 500 },
+          { status: 500 }
         );
       }
 
@@ -108,7 +103,7 @@ export async function POST(request: Request) {
               "Content-Type": "application/json; charset=UTF-8",
             },
             signal: infoController.signal,
-          },
+          }
         );
         clearTimeout(infoTimeoutId);
 
@@ -124,7 +119,7 @@ export async function POST(request: Request) {
               error: "Failed to fetch TikTok creator info",
               details: `TikTok API returned ${creatorInfoResponse.status}: ${errorText}`,
             },
-            { status: 500 },
+            { status: 500 }
           );
         }
 
@@ -140,7 +135,7 @@ export async function POST(request: Request) {
         console.log(
           "Using privacy level:",
           privacyLevel,
-          "(Required for unaudited TikTok API clients)",
+          "(Required for unaudited TikTok API clients)"
         );
 
         // Extract hashtags from the caption (if any)
@@ -154,34 +149,42 @@ export async function POST(request: Request) {
         // Step 1: Initialize video upload with TikTok using FILE_UPLOAD method with DIRECT POST
         console.log("Initializing TikTok video direct post");
 
-      // Set a new timeout for the TikTok initialization
-      const initController = new AbortController();
+        // Set a new timeout for the TikTok initialization
+        const initController = new AbortController();
 
-      // Now using the inbox/draft endpoint with simplified request (no post_info)
-      const initResponse = await fetch(
-        "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${tiktokAccount.access_token}`,
-            "Content-Type": "application/json; charset=UTF-8",
-          },
-          body: JSON.stringify({
-            source_info: {
-              source: "FILE_UPLOAD",
-              video_size: videoSize,
-              chunk_size: videoSize,
-              total_chunk_count: 1,
+        // Include caption, hashtags, and privacy level in the initialization request
+        const initResponse = await fetch(
+          "https://open.tiktokapis.com/v2/post/publish/video/init/",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${tiktokAccount.access_token}`,
+              "Content-Type": "application/json; charset=UTF-8",
             },
-          }),
-          signal: initController.signal,
-        },
-      );
+            body: JSON.stringify({
+              post_info: {
+                title: caption.substring(0, 2200), // Use full caption with hashtags
+                privacy_level: privacyLevel, // Always use SELF_ONLY (private)
+                disable_duet: false,
+                disable_comment: false,
+                disable_stitch: false,
+                video_cover_timestamp_ms: 0, // Use first frame for cover
+              },
+              source_info: {
+                source: "FILE_UPLOAD",
+                video_size: videoSize,
+                chunk_size: videoSize,
+                total_chunk_count: 1,
+              },
+            }),
+            signal: initController.signal,
+          }
+        );
 
-      // Safely parse the response - check content type first
-      let initData;
-      const contentType = initResponse.headers.get("content-type");
-      const responseText = await initResponse.text();
+        // Safely parse the response - check content type first
+        let initData;
+        const contentType = initResponse.headers.get("content-type");
+        const responseText = await initResponse.text();
 
         if (!initResponse.ok) {
           console.error("Failed to initialize TikTok upload:", {
@@ -197,130 +200,159 @@ export async function POST(request: Request) {
                 initResponse.status
               }: ${responseText.substring(0, 200)}`,
             },
-            { status: initResponse.status },
+            { status: initResponse.status }
           );
         }
 
-      // Try to parse as JSON if it looks like JSON
-      try {
-        initData = JSON.parse(responseText);
-        console.log("TikTok init response:", initData);
-      } catch (parseError) {
-        console.error("Failed to parse TikTok init response as JSON:", {
-          error: parseError,
-          responseBody: responseText.substring(0, 500),
-        });
-        return NextResponse.json(
-          {
-            error: "Invalid response from TikTok",
-            details: "Failed to parse TikTok API response as JSON",
-          },
-          { status: 500 },
+        // Try to parse as JSON if it looks like JSON
+        try {
+          initData = JSON.parse(responseText);
+          console.log("TikTok init response:", initData);
+        } catch (parseError) {
+          console.error("Failed to parse TikTok init response as JSON:", {
+            error: parseError,
+            responseBody: responseText.substring(0, 500),
+          });
+          return NextResponse.json(
+            {
+              error: "Invalid response from TikTok",
+              details: "Failed to parse TikTok API response as JSON",
+            },
+            { status: 500 }
+          );
+        }
+
+        if (
+          !initData.data ||
+          !initData.data.publish_id ||
+          !initData.data.upload_url
+        ) {
+          console.error("Invalid response from TikTok init API:", initData);
+          return NextResponse.json(
+            { error: "Invalid response from TikTok" },
+            { status: 500 }
+          );
+        }
+
+        const publishId = initData.data.publish_id;
+        const uploadUrl = initData.data.upload_url;
+        console.log(
+          "TikTok direct post initialized with publish_id:",
+          publishId
         );
-      }
+        console.log("TikTok upload URL:", uploadUrl);
 
-      if (
-        !initData.data ||
-        !initData.data.publish_id ||
-        !initData.data.upload_url
-      ) {
-        console.error("Invalid response from TikTok init API:", initData);
-        return NextResponse.json(
-          { error: "Invalid response from TikTok" },
-          { status: 500 },
+        // Step 2: Upload the video file to TikTok's provided URL
+        console.log("Uploading video to TikTok...");
+
+        // Set a new timeout for the upload operation
+        const uploadController = new AbortController();
+        const uploadTimeoutId = setTimeout(
+          () => uploadController.abort(),
+          8000
         );
-      }
 
-      const publishId = initData.data.publish_id;
-      const uploadUrl = initData.data.upload_url;
-      console.log(
-        "TikTok inbox/draft upload initialized with publish_id:",
-        publishId,
-      );
-      console.log("TikTok upload URL:", uploadUrl);
+        try {
+          const uploadResponse = await fetch(uploadUrl, {
+            method: "PUT",
+            headers: {
+              "Content-Type":
+                videoResponse.headers.get("content-type") || "video/mp4",
+              "Content-Range": `bytes 0-${videoSize - 1}/${videoSize}`,
+            },
+            body: new Uint8Array(videoBuffer),
+            signal: uploadController.signal,
+          });
+          clearTimeout(uploadTimeoutId);
 
-      // Step 2: Upload the video file to TikTok's provided URL
-      console.log("Uploading video to TikTok...");
+          if (!uploadResponse.ok) {
+            // Try to get response text - this might be HTML or another format
+            let uploadError;
+            try {
+              uploadError = await uploadResponse.text();
+            } catch {
+              uploadError = "Could not read error response";
+            }
 
-      // Set a new timeout for the upload operation
-      const uploadController = new AbortController();
-      const uploadTimeoutId = setTimeout(() => uploadController.abort(), 8000);
+            console.error("Failed to upload video to TikTok:", {
+              status: uploadResponse.status,
+              statusText: uploadResponse.statusText,
+              errorText: uploadError.substring(0, 500),
+            });
 
-      try {
-        const uploadResponse = await fetch(uploadUrl, {
-          method: "PUT",
-          headers: {
-            "Content-Type":
-              videoResponse.headers.get("content-type") || "video/mp4",
-            "Content-Range": `bytes 0-${videoSize - 1}/${videoSize}`,
-            "Content-Length": `${videoSize}`,
-          },
-          body: new Uint8Array(videoBuffer),
-          signal: uploadController.signal,
-        });
-        clearTimeout(uploadTimeoutId);
-
-        if (!uploadResponse.ok) {
-          // Try to get response text - this might be HTML or another format
-          let uploadError;
-          try {
-            uploadError = await uploadResponse.text();
-          } catch {
-            uploadError = "Could not read error response";
+            return NextResponse.json(
+              {
+                error: "Failed to upload video to TikTok",
+                details: `Upload failed with status ${uploadResponse.status}: ${uploadResponse.statusText}`,
+              },
+              { status: uploadResponse.status }
+            );
           }
 
-          console.error("Failed to upload video to TikTok:", {
-            status: uploadResponse.status,
-            statusText: uploadResponse.statusText,
-            errorText: uploadError.substring(0, 500),
+          console.log("Video successfully uploaded to TikTok");
+
+          // Return immediately with the publishId
+          return NextResponse.json({
+            status: "processing",
+            publishId: publishId,
+            accessToken: tiktokAccount.access_token,
+            mediaUrl: mediaUrl,
+            message:
+              "Video uploaded to TikTok and is being processed for direct posting.",
+            note: "Your video will be posted with private (Only Me) visibility. You can change the visibility settings in the TikTok app after publishing is complete.",
           });
+        } catch (uploadError) {
+          clearTimeout(uploadTimeoutId);
+          console.error("Error during video upload to TikTok:", uploadError);
+
+          // Check if this is an AbortError (timeout)
+          if (
+            uploadError instanceof Error &&
+            uploadError.name === "AbortError"
+          ) {
+            return NextResponse.json(
+              {
+                error: "TikTok upload timeout",
+                details:
+                  "The upload to TikTok took too long and was aborted. Try with a smaller video file.",
+              },
+              { status: 504 }
+            );
+          }
 
           return NextResponse.json(
             {
               error: "Failed to upload video to TikTok",
-              details: `Upload failed with status ${uploadResponse.status}: ${uploadResponse.statusText}`,
+              details:
+                uploadError instanceof Error
+                  ? uploadError.message
+                  : "Unknown upload error",
             },
-            { status: uploadResponse.status },
+            { status: 500 }
           );
         }
-
-        console.log("Video successfully uploaded to TikTok inbox");
-
-        // Return immediately with the publishId
-        return NextResponse.json({
-          status: "processing",
-          publishId: publishId,
-          accessToken: tiktokAccount.access_token,
-          mediaUrl: mediaUrl,
-          message:
-            "Video uploaded to TikTok and is being processed for your inbox/drafts.",
-          note: "You will receive a notification in your TikTok app. Open the notification to edit and publish your video.",
-        });
-      } catch (uploadError) {
-        clearTimeout(uploadTimeoutId);
-        console.error("Error during video upload to TikTok:", uploadError);
+      } catch (infoError) {
+        clearTimeout(infoTimeoutId);
+        console.error("Error fetching TikTok creator info:", infoError);
 
         // Check if this is an AbortError (timeout)
-        if (uploadError instanceof Error && uploadError.name === "AbortError") {
+        if (infoError instanceof Error && infoError.name === "AbortError") {
           return NextResponse.json(
             {
-              error: "TikTok upload timeout",
-              details:
-                "The upload to TikTok took too long and was aborted. Try with a smaller video file.",
+              error: "TikTok API timeout",
+              details: "Fetching creator info took too long and was aborted",
             },
-            { status: 504 },
+            { status: 504 }
           );
         }
 
         return NextResponse.json(
           {
-            error: "Failed to upload video to TikTok",
+            error: "Failed to fetch TikTok creator info",
             details:
-              uploadError instanceof Error
-                ? uploadError.message
-                : "Unknown upload error",
+              infoError instanceof Error ? infoError.message : "Unknown error",
           },
-          { status: 500 },
+          { status: 500 }
         );
       }
     } catch (fetchError) {
@@ -335,7 +367,7 @@ export async function POST(request: Request) {
             details:
               "Fetching the video took too long and was aborted. Try with a smaller video file.",
           },
-          { status: 504 },
+          { status: 504 }
         );
       }
 
@@ -347,7 +379,7 @@ export async function POST(request: Request) {
               ? fetchError.message
               : "Unknown fetch error",
         },
-        { status: 500 },
+        { status: 500 }
       );
     }
   } catch (error: unknown) {
@@ -357,7 +389,7 @@ export async function POST(request: Request) {
         error: "Video upload failed",
         details: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }
