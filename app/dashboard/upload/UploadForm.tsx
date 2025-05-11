@@ -57,22 +57,22 @@ export default function UploadForm({
       const selectedFile = e.target.files[0];
 
       // Check if file is too large (50MB for TikTok)
-      const MAX_TIKTOK_SIZE = 50 * 1024 * 1024; // 50MB
+      // const MAX_TIKTOK_SIZE = 50 * 1024 * 1024; // 50MB
 
-      if (selectedFile.size > MAX_TIKTOK_SIZE && activeTab === "tiktok") {
-        setErrorMessages([
-          `This file is ${(selectedFile.size / (1024 * 1024)).toFixed(
-            2,
-          )}MB. TikTok has a 50MB file size limit. Please select a smaller file for TikTok uploads.`,
-        ]);
-        setUploadStatus("error");
-      } else {
-        // Clear any previous errors
-        if (errorMessages.length > 0) {
-          setErrorMessages([]);
-          setUploadStatus("idle");
-        }
-      }
+      // if (selectedFile.size > MAX_TIKTOK_SIZE && activeTab === "tiktok") {
+      //   setErrorMessages([
+      //     `This file is ${(selectedFile.size / (1024 * 1024)).toFixed(
+      //       2,
+      //     )}MB. TikTok has a 50MB file size limit. Please select a smaller file for TikTok uploads.`,
+      //   ]);
+      //   setUploadStatus("error");
+      // } else {
+      //   // Clear any previous errors
+      //   if (errorMessages.length > 0) {
+      //     setErrorMessages([]);
+      //     setUploadStatus("idle");
+      //   }
+      // }
 
       setFile(selectedFile);
     }

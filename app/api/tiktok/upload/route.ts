@@ -30,7 +30,7 @@ export async function POST(request: Request) {
       });
       return NextResponse.json(
         { error: "Missing required fields" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
       });
       return NextResponse.json(
         { error: "TikTok account not properly connected" },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
@@ -76,7 +76,7 @@ export async function POST(request: Request) {
         });
         return NextResponse.json(
           { error: "Failed to fetch video from blob storage" },
-          { status: 500 }
+          { status: 500 },
         );
       }
 
@@ -103,7 +103,7 @@ export async function POST(request: Request) {
               "Content-Type": "application/json; charset=UTF-8",
             },
             signal: infoController.signal,
-          }
+          },
         );
         clearTimeout(infoTimeoutId);
 
@@ -119,7 +119,7 @@ export async function POST(request: Request) {
               error: "Failed to fetch TikTok creator info",
               details: `TikTok API returned ${creatorInfoResponse.status}: ${errorText}`,
             },
-            { status: 500 }
+            { status: 500 },
           );
         }
 
@@ -135,7 +135,7 @@ export async function POST(request: Request) {
         console.log(
           "Using privacy level:",
           privacyLevel,
-          "(Required for unaudited TikTok API clients)"
+          "(Required for unaudited TikTok API clients)",
         );
 
         // Extract hashtags from the caption (if any)
@@ -178,7 +178,7 @@ export async function POST(request: Request) {
               },
             }),
             signal: initController.signal,
-          }
+          },
         );
 
         // Safely parse the response - check content type first
@@ -200,7 +200,7 @@ export async function POST(request: Request) {
                 initResponse.status
               }: ${responseText.substring(0, 200)}`,
             },
-            { status: initResponse.status }
+            { status: initResponse.status },
           );
         }
 
@@ -218,7 +218,7 @@ export async function POST(request: Request) {
               error: "Invalid response from TikTok",
               details: "Failed to parse TikTok API response as JSON",
             },
-            { status: 500 }
+            { status: 500 },
           );
         }
 
@@ -230,7 +230,7 @@ export async function POST(request: Request) {
           console.error("Invalid response from TikTok init API:", initData);
           return NextResponse.json(
             { error: "Invalid response from TikTok" },
-            { status: 500 }
+            { status: 500 },
           );
         }
 
@@ -238,7 +238,7 @@ export async function POST(request: Request) {
         const uploadUrl = initData.data.upload_url;
         console.log(
           "TikTok direct post initialized with publish_id:",
-          publishId
+          publishId,
         );
         console.log("TikTok upload URL:", uploadUrl);
 
@@ -249,7 +249,7 @@ export async function POST(request: Request) {
         const uploadController = new AbortController();
         const uploadTimeoutId = setTimeout(
           () => uploadController.abort(),
-          8000
+          8000,
         );
 
         try {
@@ -285,7 +285,7 @@ export async function POST(request: Request) {
                 error: "Failed to upload video to TikTok",
                 details: `Upload failed with status ${uploadResponse.status}: ${uploadResponse.statusText}`,
               },
-              { status: uploadResponse.status }
+              { status: uploadResponse.status },
             );
           }
 
@@ -316,7 +316,7 @@ export async function POST(request: Request) {
                 details:
                   "The upload to TikTok took too long and was aborted. Try with a smaller video file.",
               },
-              { status: 504 }
+              { status: 504 },
             );
           }
 
@@ -328,7 +328,7 @@ export async function POST(request: Request) {
                   ? uploadError.message
                   : "Unknown upload error",
             },
-            { status: 500 }
+            { status: 500 },
           );
         }
       } catch (infoError) {
@@ -342,7 +342,7 @@ export async function POST(request: Request) {
               error: "TikTok API timeout",
               details: "Fetching creator info took too long and was aborted",
             },
-            { status: 504 }
+            { status: 504 },
           );
         }
 
@@ -352,7 +352,7 @@ export async function POST(request: Request) {
             details:
               infoError instanceof Error ? infoError.message : "Unknown error",
           },
-          { status: 500 }
+          { status: 500 },
         );
       }
     } catch (fetchError) {
@@ -367,7 +367,7 @@ export async function POST(request: Request) {
             details:
               "Fetching the video took too long and was aborted. Try with a smaller video file.",
           },
-          { status: 504 }
+          { status: 504 },
         );
       }
 
@@ -379,7 +379,7 @@ export async function POST(request: Request) {
               ? fetchError.message
               : "Unknown fetch error",
         },
-        { status: 500 }
+        { status: 500 },
       );
     }
   } catch (error: unknown) {
@@ -389,7 +389,7 @@ export async function POST(request: Request) {
         error: "Video upload failed",
         details: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
