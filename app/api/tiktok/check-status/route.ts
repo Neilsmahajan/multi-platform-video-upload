@@ -30,6 +30,10 @@ export async function POST(request: Request) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
 
+      const statusPayload = JSON.stringify({
+        publish_id: publishId,
+      });
+
       const statusResponse = await fetch(
         "https://open.tiktokapis.com/v2/post/publish/status/fetch/",
         {
@@ -37,10 +41,9 @@ export async function POST(request: Request) {
           headers: {
             Authorization: `Bearer ${accessToken}`,
             "Content-Type": "application/json; charset=UTF-8",
+            "Content-Length": statusPayload.length.toString(),
           },
-          body: JSON.stringify({
-            publish_id: publishId,
-          }),
+          body: statusPayload,
           signal: controller.signal,
         },
       );

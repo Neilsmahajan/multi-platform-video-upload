@@ -85,28 +85,15 @@ export async function POST(request: Request) {
       const videoSize = videoBuffer.byteLength;
       console.log("Video size:", videoSize, "bytes");
 
-      // Define chunk size based on TikTok's requirements
-      // Adjust chunk size based on video size
-      let chunkSize;
-      if (videoSize <= 10000000) {
-        // Less than 10MB
-        // Small videos can be uploaded in one chunk
-        chunkSize = videoSize;
-      } else if (videoSize <= 100000000) {
-        // 10MB to 100MB
-        // Medium videos use 10MB chunks (TikTok recommended size)
-        chunkSize = 10000000; // 10MB
-      } else {
-        // Larger videos use 20MB chunks
-        chunkSize = 20000000; // 20MB
-      }
+      // Define chunk size - use 5MB chunks as recommended by TikTok
+      // TikTok's API seems to be particular about chunk sizes
+      const CHUNK_SIZE = 5 * 1024 * 1024; // Exactly 5MB as recommended by TikTok
 
-      // Ensure we have at least one chunk and the chunk size is valid
-      chunkSize = Math.min(videoSize, chunkSize);
-      const totalChunks = Math.ceil(videoSize / chunkSize);
+      // Calculate total chunks precisely
+      const totalChunks = Math.ceil(videoSize / CHUNK_SIZE);
 
       console.log(
-        `Using chunk size: ${chunkSize} bytes, total chunks: ${totalChunks}`,
+        `Using chunk size: ${CHUNK_SIZE} bytes, total chunks: ${totalChunks}`,
       );
 
       // First fetch creator info directly from TikTok API
@@ -233,6 +220,26 @@ export async function POST(request: Request) {
         const initController = new AbortController();
         const initTimeoutId = setTimeout(() => initController.abort(), 10000);
 
+        // Create the initialization request payload with exact chunk calculations
+        const initPayload = {
+          post_info: {
+            title: caption.substring(0, 2200), // Use full caption with hashtags
+            privacy_level: privacyLevel, // Always use SELF_ONLY (private)
+            disable_duet: false,
+            disable_comment: false,
+            disable_stitch: false,
+            video_cover_timestamp_ms: 0, // Use first frame for cover
+          },
+          source_info: {
+            source: "FILE_UPLOAD",
+            video_size: videoSize,
+            chunk_size: CHUNK_SIZE,
+            total_chunk_count: totalChunks,
+          },
+        };
+
+        console.log("TikTok init payload:", JSON.stringify(initPayload));
+
         // Include caption, hashtags, and privacy level in the initialization request
         const initResponse = await fetch(
           "https://open.tiktokapis.com/v2/post/publish/video/init/",
@@ -242,22 +249,7 @@ export async function POST(request: Request) {
               Authorization: `Bearer ${tiktokAccount.access_token}`,
               "Content-Type": "application/json; charset=UTF-8",
             },
-            body: JSON.stringify({
-              post_info: {
-                title: caption.substring(0, 2200), // Use full caption with hashtags
-                privacy_level: privacyLevel, // Always use SELF_ONLY (private)
-                disable_duet: false,
-                disable_comment: false,
-                disable_stitch: false,
-                video_cover_timestamp_ms: 0, // Use first frame for cover
-              },
-              source_info: {
-                source: "FILE_UPLOAD",
-                video_size: videoSize,
-                chunk_size: chunkSize,
-                total_chunk_count: totalChunks,
-              },
-            }),
+            body: JSON.stringify(initPayload),
             signal: initController.signal,
           },
         );
@@ -295,6 +287,19 @@ export async function POST(request: Request) {
                 ],
               },
               { status: 403 },
+            );
+          }
+
+          // Look for chunk count error specifically
+          if (responseText.includes("total chunk count is invalid")) {
+            return NextResponse.json(
+              {
+                error: "Invalid chunk configuration",
+                details:
+                  "TikTok rejected the chunk size configuration. Try with a smaller video file (under 50MB) or try again later.",
+                technicalDetails: responseText,
+              },
+              { status: 400 },
             );
           }
 
@@ -365,6 +370,7 @@ export async function POST(request: Request) {
                 "Content-Type":
                   videoResponse.headers.get("content-type") || "video/mp4",
                 "Content-Range": `bytes 0-${videoSize - 1}/${videoSize}`,
+                "Content-Length": videoSize.toString(),
               },
               body: new Uint8Array(videoBuffer),
               signal: uploadController.signal,
@@ -432,8 +438,9 @@ export async function POST(request: Request) {
 
           // Upload each chunk separately
           for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-            const start = chunkIndex * chunkSize;
-            const end = Math.min(start + chunkSize - 1, videoSize - 1);
+            const start = chunkIndex * CHUNK_SIZE;
+            const end = Math.min(start + CHUNK_SIZE - 1, videoSize - 1);
+            const chunkSize = end - start + 1;
 
             // Extract the chunk from the video buffer
             const chunk = new Uint8Array(videoBuffer.slice(start, end + 1));
@@ -441,7 +448,7 @@ export async function POST(request: Request) {
             console.log(
               `Uploading chunk ${
                 chunkIndex + 1
-              }/${totalChunks}, bytes ${start}-${end}/${videoSize}`,
+              }/${totalChunks}, bytes ${start}-${end}/${videoSize} (${chunkSize} bytes)`,
             );
 
             // Set a timeout for this chunk upload - use longer timeout for larger chunks
@@ -458,6 +465,7 @@ export async function POST(request: Request) {
                   "Content-Type":
                     videoResponse.headers.get("content-type") || "video/mp4",
                   "Content-Range": `bytes ${start}-${end}/${videoSize}`,
+                  "Content-Length": chunkSize.toString(),
                 },
                 body: chunk,
                 signal: chunkController.signal,
