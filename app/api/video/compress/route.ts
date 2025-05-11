@@ -5,7 +5,7 @@ import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { toBlobURL } from "@ffmpeg/util";
 
 // Configure for longer processing time on serverless
-export const maxDuration = 180; // 3 minute timeout for compression
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   try {
