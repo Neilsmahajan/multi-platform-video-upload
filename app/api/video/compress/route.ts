@@ -17,7 +17,11 @@ export async function POST(request: Request) {
     }
 
     // Parse request body
-    const { sourceUrl, originalFileName } = await request.json();
+    const {
+      sourceUrl,
+      originalFileName,
+      targetSizeMB = 25,
+    } = await request.json();
     if (!sourceUrl || !originalFileName) {
       return NextResponse.json(
         { error: "Missing required fields" },
@@ -27,6 +31,7 @@ export async function POST(request: Request) {
 
     console.log(`Starting video compression for ${originalFileName}`);
     console.log(`Source URL: ${sourceUrl}`);
+    console.log(`Target size: ${targetSizeMB}MB`);
 
     // Create output filename
     const outputFileName =
@@ -40,14 +45,14 @@ export async function POST(request: Request) {
       const ffmpeg = new FFmpeg();
       console.log("Loading FFmpeg...");
 
-      // Load FFmpeg WebAssembly modules
+      // Load FFmpeg WebAssembly modules - fix the URLs
       await ffmpeg.load({
         coreURL: await toBlobURL(
           "https://unpkg.com/@ffmpeg/core@0.12.6/dist/ffmpeg-core.wasm",
           "application/wasm",
         ),
         wasmURL: await toBlobURL(
-          "https://unpkg.com/@ffmpeg/core@0.12.6/dist/ffmpeg-core.wasm",
+          "https://unpkg.com/@ffmpeg/core-mt@0.12.6/dist/ffmpeg-core.wasm",
           "application/wasm",
         ),
       });
@@ -68,41 +73,72 @@ export async function POST(request: Request) {
       const sourceSizeMB = sourceSize / (1024 * 1024);
       console.log(`Source video size: ${sourceSizeMB.toFixed(2)} MB`);
 
-      // Calculate target bitrate based on source size to aim for max 75MB output
-      // This is a simplified approach - real-world compression would be more complex
-      const targetSizeMB = Math.min(sourceSizeMB * 0.8, 75);
-      const durationSeconds = 180; // Assuming 3 minute video (adjust if needed)
+      // Aim for target size (default 25MB which is good for TikTok)
+      const compressionRatio = Math.min(targetSizeMB / sourceSizeMB, 0.9);
+      // Determine bitrate (assuming 3 minute video to be safe)
+      const durationSeconds = 180;
       const videoBitrate = Math.floor(
         (targetSizeMB * 8 * 1024) / durationSeconds,
       );
       const audioBitrate = "128k";
 
       console.log(`Target size: ${targetSizeMB.toFixed(2)} MB`);
+      console.log(`Compression ratio: ${compressionRatio.toFixed(2)}`);
       console.log(`Calculated video bitrate: ${videoBitrate}k`);
 
-      // Run FFmpeg command to compress the video
+      // Run FFmpeg command with aggressive compression
       console.log("Starting compression...");
-      await ffmpeg.exec([
-        "-i",
-        "input.mp4",
-        "-c:v",
-        "libx264", // Use H.264 video codec
-        "-preset",
-        "fast", // Compression preset (faster but less efficient)
-        "-b:v",
-        `${videoBitrate}k`, // Video bitrate
-        "-maxrate",
-        `${videoBitrate * 1.5}k`, // Maximum bitrate
-        "-bufsize",
-        `${videoBitrate * 2}k`, // Buffer size
-        "-c:a",
-        "aac", // Audio codec
-        "-b:a",
-        audioBitrate, // Audio bitrate
-        "-movflags",
-        "+faststart", // Optimize for web streaming
-        "output.mp4",
-      ]);
+
+      // Different command for .mov vs other formats
+      if (originalFileName.toLowerCase().endsWith(".mov")) {
+        // More aggressive settings for .mov files
+        await ffmpeg.exec([
+          "-i",
+          "input.mp4",
+          "-c:v",
+          "libx264",
+          "-preset",
+          "ultrafast", // Faster but less efficient compression
+          "-crf",
+          "28", // Higher CRF = more compression
+          "-vf",
+          "scale=-2:720", // Resize to 720p height, maintain aspect ratio
+          "-r",
+          "30", // 30fps
+          "-c:a",
+          "aac",
+          "-b:a",
+          audioBitrate,
+          "-movflags",
+          "+faststart",
+          "output.mp4",
+        ]);
+      } else {
+        // For mp4 and other formats
+        await ffmpeg.exec([
+          "-i",
+          "input.mp4",
+          "-c:v",
+          "libx264",
+          "-preset",
+          "fast",
+          "-b:v",
+          `${videoBitrate}k`,
+          "-maxrate",
+          `${videoBitrate * 1.5}k`,
+          "-bufsize",
+          `${videoBitrate * 2}k`,
+          "-vf",
+          "scale=-2:720", // Resize to 720p height
+          "-c:a",
+          "aac",
+          "-b:a",
+          audioBitrate,
+          "-movflags",
+          "+faststart",
+          "output.mp4",
+        ]);
+      }
 
       console.log("Compression completed, reading output file...");
 

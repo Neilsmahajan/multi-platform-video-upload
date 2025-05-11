@@ -111,6 +111,54 @@ export default function UploadForm({
     }
   };
 
+  // Helper function to check if a file is large and needs compression
+  const needsCompression = (fileSize: number, platform: string): boolean => {
+    // For TikTok, compress files larger than 50MB
+    if (platform === "tiktok" && fileSize > 50 * 1024 * 1024) {
+      return true;
+    }
+    // Add rules for other platforms as needed
+    return false;
+  };
+
+  // Helper function to compress a video
+  const compressVideo = async (
+    fileUrl: string,
+    fileName: string,
+  ): Promise<string> => {
+    setIsCompressing(true);
+    try {
+      const compressResponse = await fetch("/api/video/compress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceUrl: fileUrl,
+          originalFileName: fileName,
+          targetSizeMB: 25, // Target size for TikTok videos
+        }),
+      });
+
+      if (!compressResponse.ok) {
+        const errorData = await compressResponse.json();
+        console.error("Video compression failed:", errorData);
+        throw new Error(
+          `Compression failed: ${
+            errorData.details || errorData.error || "Unknown error"
+          }`,
+        );
+      }
+
+      const compressData = await compressResponse.json();
+      console.log("Video compressed successfully:", compressData);
+      setIsCompressing(false);
+      return compressData.compressedUrl;
+    } catch (error) {
+      setIsCompressing(false);
+      console.error("Error during compression:", error);
+      throw error;
+    }
+  };
+
   const handleUpload = async (platform: string) => {
     if (!file || !title) return;
     setIsUploading(true);
@@ -126,18 +174,42 @@ export default function UploadForm({
       });
       console.log("File uploaded to Vercel Blob successfully", blobResult);
 
+      // Check if we need to compress the video
+      let videoUrl = blobResult.url;
+      let originalUrl = null;
+
+      // If large file and platform is TikTok, compress it
+      if (needsCompression(file.size, platform)) {
+        console.log(
+          `Large file detected (${(file.size / (1024 * 1024)).toFixed(2)}MB), compressing for ${platform}...`,
+        );
+        try {
+          originalUrl = videoUrl; // Store original URL
+          videoUrl = await compressVideo(blobResult.url, file.name);
+          console.log(`Video compressed successfully, new URL: ${videoUrl}`);
+        } catch (compressionError) {
+          console.error(
+            "Compression failed, using original file:",
+            compressionError,
+          );
+          // Continue with original file if compression fails
+          videoUrl = blobResult.url;
+          originalUrl = null;
+        }
+      }
+
       // Platform-specific upload logic
       let uploadSuccess = false;
       const uploadErrors = [];
 
       if (platform === "youtube") {
         try {
-          console.log("Starting YouTube upload with blob URL:", blobResult.url);
+          console.log("Starting YouTube upload with blob URL:", videoUrl);
           const youtubeRes = await fetch("/api/youtube/upload", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              blobUrl: blobResult.url,
+              blobUrl: videoUrl,
               title,
               description,
               privacyStatus,
@@ -169,7 +241,7 @@ export default function UploadForm({
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              mediaUrl: blobResult.url,
+              mediaUrl: videoUrl,
               caption: description || title,
             }),
           });
@@ -197,7 +269,8 @@ export default function UploadForm({
                     body: JSON.stringify({
                       containerId: instagramData.containerId,
                       igBusinessAccountId: instagramData.igBusinessAccountId,
-                      mediaUrl: blobResult.url, // Pass this to clean up the blob after publishing
+                      mediaUrl: videoUrl, // Pass this to clean up the blob after publishing
+                      originalMediaUrl: originalUrl, // Also pass original URL if it exists
                     }),
                   });
 
@@ -257,21 +330,18 @@ export default function UploadForm({
         }
       } else if (platform === "tiktok" && tiktokConnected) {
         try {
-          console.log("Starting TikTok upload with blob URL:", blobResult.url);
+          console.log("Starting TikTok upload with blob URL:", videoUrl);
 
-          // Check if this is a large file that might take longer
-          const fileSizeMB = file.size / (1024 * 1024);
-          if (fileSizeMB > 50) {
-            // Show processing indicator for larger files
-            setIsCompressing(true);
-          }
+          // Show processing indicator (regardless of whether we already compressed)
+          setIsCompressing(true);
 
           const tiktokRes = await fetch("/api/tiktok/upload", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              mediaUrl: blobResult.url,
+              mediaUrl: videoUrl,
               caption: description || title,
+              originalMediaUrl: originalUrl, // Pass original URL if it exists
             }),
           });
           setIsCompressing(false);
@@ -308,7 +378,8 @@ export default function UploadForm({
                     body: JSON.stringify({
                       publishId: tiktokData.publishId,
                       accessToken: tiktokData.accessToken,
-                      mediaUrl: blobResult.url,
+                      mediaUrl: videoUrl,
+                      originalMediaUrl: originalUrl,
                     }),
                   });
 
