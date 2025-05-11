@@ -56,23 +56,23 @@ export default function UploadForm({
     if (e.target.files && e.target.files[0]) {
       const selectedFile = e.target.files[0];
 
-      // Check if file is too large (50MB for TikTok)
-      // const MAX_TIKTOK_SIZE = 50 * 1024 * 1024; // 50MB
+      // Check if file is too large (80MB for TikTok)
+      const MAX_TIKTOK_SIZE = 80 * 1024 * 1024; // 80MB - TikTok requires proper chunking for large files
 
-      // if (selectedFile.size > MAX_TIKTOK_SIZE && activeTab === "tiktok") {
-      //   setErrorMessages([
-      //     `This file is ${(selectedFile.size / (1024 * 1024)).toFixed(
-      //       2,
-      //     )}MB. TikTok has a 50MB file size limit. Please select a smaller file for TikTok uploads.`,
-      //   ]);
-      //   setUploadStatus("error");
-      // } else {
-      //   // Clear any previous errors
-      //   if (errorMessages.length > 0) {
-      //     setErrorMessages([]);
-      //     setUploadStatus("idle");
-      //   }
-      // }
+      if (selectedFile.size > MAX_TIKTOK_SIZE && activeTab === "tiktok") {
+        setErrorMessages([
+          `This file is ${(selectedFile.size / (1024 * 1024)).toFixed(
+            2,
+          )}MB. TikTok has an 80MB file size limit. Please select a smaller file for TikTok uploads.`,
+        ]);
+        setUploadStatus("error");
+      } else {
+        // Clear any previous errors
+        if (errorMessages.length > 0) {
+          setErrorMessages([]);
+          setUploadStatus("idle");
+        }
+      }
 
       setFile(selectedFile);
     }
@@ -107,18 +107,18 @@ export default function UploadForm({
 
     // Check if current file is too large for TikTok when switching to that tab
     if (value === "tiktok" && file) {
-      const MAX_TIKTOK_SIZE = 50 * 1024 * 1024; // 50MB
+      const MAX_TIKTOK_SIZE = 80 * 1024 * 1024; // 80MB
       if (file.size > MAX_TIKTOK_SIZE) {
         setErrorMessages([
           `This file is ${(file.size / (1024 * 1024)).toFixed(
             2,
-          )}MB. TikTok has a 50MB file size limit. Please select a smaller file for TikTok uploads.`,
+          )}MB. TikTok has an 80MB file size limit. Please select a smaller file for TikTok uploads.`,
         ]);
         setUploadStatus("error");
       } else if (errorMessages.length > 0 && uploadStatus === "error") {
         // Clear TikTok-specific size errors when switching back
         const nonSizeErrors = errorMessages.filter(
-          (msg) => !msg.includes("TikTok has a 50MB file size limit"),
+          (msg) => !msg.includes("TikTok has an 80MB file size limit"),
         );
         if (nonSizeErrors.length !== errorMessages.length) {
           setErrorMessages(nonSizeErrors);
