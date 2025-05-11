@@ -90,8 +90,69 @@ export async function POST(request: Request) {
       const videoSize = videoBuffer.byteLength;
       console.log("Video size:", videoSize, "bytes");
 
-      // Step 1: Initialize video upload with TikTok using FILE_UPLOAD method - using inbox/draft API
-      console.log("Initializing TikTok inbox/draft video upload");
+      // First fetch creator info directly from TikTok API
+      console.log("Fetching TikTok creator info");
+
+      // Set a timeout for the creator info query
+      const infoController = new AbortController();
+      const infoTimeoutId = setTimeout(() => infoController.abort(), 8000);
+
+      try {
+        // Query creator info directly
+        const creatorInfoResponse = await fetch(
+          "https://open.tiktokapis.com/v2/post/publish/creator_info/query/",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${tiktokAccount.access_token}`,
+              "Content-Type": "application/json; charset=UTF-8",
+            },
+            signal: infoController.signal,
+          },
+        );
+        clearTimeout(infoTimeoutId);
+
+        // Handle response
+        if (!creatorInfoResponse.ok) {
+          const errorText = await creatorInfoResponse.text();
+          console.error("Failed to fetch TikTok creator info:", {
+            status: creatorInfoResponse.status,
+            response: errorText,
+          });
+          return NextResponse.json(
+            {
+              error: "Failed to fetch TikTok creator info",
+              details: `TikTok API returned ${creatorInfoResponse.status}: ${errorText}`,
+            },
+            { status: 500 },
+          );
+        }
+
+        // Get response text and parse JSON
+        const creatorInfoText = await creatorInfoResponse.text();
+        console.log("Creator info response:", creatorInfoText);
+        console.log("Creator info parsed successfully");
+
+        // For unaudited clients, we must use SELF_ONLY (private) privacy level
+        // Force SELF_ONLY regardless of what's available in privacy_level_options
+        const privacyLevel = "SELF_ONLY";
+
+        console.log(
+          "Using privacy level:",
+          privacyLevel,
+          "(Required for unaudited TikTok API clients)",
+        );
+
+        // Extract hashtags from the caption (if any)
+        const hashtagRegex = /#(\w+)/g;
+        const hashtags = [];
+        let match;
+        while ((match = hashtagRegex.exec(caption)) !== null) {
+          hashtags.push(match[1]);
+        }
+
+        // Step 1: Initialize video upload with TikTok using FILE_UPLOAD method with DIRECT POST
+        console.log("Initializing TikTok video direct post");
 
       // Set a new timeout for the TikTok initialization
       const initController = new AbortController();
@@ -122,23 +183,23 @@ export async function POST(request: Request) {
       const contentType = initResponse.headers.get("content-type");
       const responseText = await initResponse.text();
 
-      if (!initResponse.ok) {
-        console.error("Failed to initialize TikTok upload:", {
-          status: initResponse.status,
-          contentType,
-          responseBody: responseText.substring(0, 500), // Log part of the body for debugging
-        });
+        if (!initResponse.ok) {
+          console.error("Failed to initialize TikTok upload:", {
+            status: initResponse.status,
+            contentType,
+            responseBody: responseText.substring(0, 500), // Log part of the body for debugging
+          });
 
-        return NextResponse.json(
-          {
-            error: "Failed to initialize TikTok draft upload",
-            details: `TikTok API returned ${
-              initResponse.status
-            }: ${responseText.substring(0, 200)}`,
-          },
-          { status: initResponse.status },
-        );
-      }
+          return NextResponse.json(
+            {
+              error: "Failed to initialize TikTok direct post",
+              details: `TikTok API returned ${
+                initResponse.status
+              }: ${responseText.substring(0, 200)}`,
+            },
+            { status: initResponse.status },
+          );
+        }
 
       // Try to parse as JSON if it looks like JSON
       try {
