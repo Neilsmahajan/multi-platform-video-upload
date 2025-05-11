@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { put } from "@vercel/blob";
 import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { toBlobURL } from "@ffmpeg/util";
+import { fetchFile } from "@ffmpeg/util";
 
-// Configure for longer processing time on serverless
+// Configure for longer processing time on serverless, limit to 60 seconds allowed by Vercel hobby tier
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
@@ -41,35 +41,37 @@ export async function POST(request: Request) {
     console.log(`Output filename: ${outputFileName}`);
 
     try {
-      // Initialize FFmpeg
+      // Initialize FFmpeg with the correct configuration for Node.js
       const ffmpeg = new FFmpeg();
       console.log("Loading FFmpeg...");
 
-      // Load FFmpeg WebAssembly modules - fix the URLs
+      // Configure FFmpeg for Node.js environment
       await ffmpeg.load({
-        coreURL: await toBlobURL(
-          "https://unpkg.com/@ffmpeg/core@0.12.6/dist/ffmpeg-core.wasm",
-          "application/wasm",
-        ),
-        wasmURL: await toBlobURL(
-          "https://unpkg.com/@ffmpeg/core-mt@0.12.6/dist/ffmpeg-core.wasm",
-          "application/wasm",
-        ),
+        // Load from CDN for Node.js environment
+        coreURL: "https://unpkg.com/@ffmpeg/core-st@0.11.1/dist/ffmpeg-core.js",
+        wasmURL:
+          "https://unpkg.com/@ffmpeg/core-st@0.11.1/dist/ffmpeg-core.wasm",
+      });
+
+      // Set up logging if needed
+      ffmpeg.on("log", ({ message }) => {
+        console.log(message);
       });
 
       console.log("FFmpeg loaded");
 
       // Fetch the source video
       console.log("Fetching source video...");
+      // Directly fetch the file using the FFmpeg utility
       const sourceData = await fetch(sourceUrl);
-      const sourceBuffer = await sourceData.arrayBuffer();
+      const sourceBlob = await sourceData.blob();
 
       // Write the input file to FFmpeg's virtual file system
       console.log("Writing input file to FFmpeg filesystem...");
-      ffmpeg.writeFile("input.mp4", new Uint8Array(sourceBuffer));
+      await ffmpeg.writeFile("input.mp4", await fetchFile(sourceBlob));
 
       // Determine compression settings based on file size
-      const sourceSize = sourceBuffer.byteLength;
+      const sourceSize = sourceBlob.size;
       const sourceSizeMB = sourceSize / (1024 * 1024);
       console.log(`Source video size: ${sourceSizeMB.toFixed(2)} MB`);
 
