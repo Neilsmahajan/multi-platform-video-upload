@@ -10,6 +10,11 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
+// TikTok video upload limits
+const MAX_RECOMMENDED_SIZE = 50 * 1024 * 1024; // 50MB recommended max
+const MAX_ALLOWED_SIZE = 100 * 1024 * 1024; // 100MB hard limit
+const MAX_CHUNKS_ALLOWED = 10; // TikTok seems to limit chunks
+
 export async function POST(request: Request) {
   try {
     // Validate session
@@ -85,15 +90,39 @@ export async function POST(request: Request) {
       const videoSize = videoBuffer.byteLength;
       console.log("Video size:", videoSize, "bytes");
 
-      // Define chunk size - use 5MB chunks as recommended by TikTok
-      // TikTok's API seems to be particular about chunk sizes
-      const CHUNK_SIZE = 5 * 1024 * 1024; // Exactly 5MB as recommended by TikTok
+      // Check if the file is too large for TikTok's API
+      if (videoSize > MAX_ALLOWED_SIZE) {
+        return NextResponse.json(
+          {
+            error: "Video file too large",
+            details: `Your video is ${(videoSize / (1024 * 1024)).toFixed(
+              2,
+            )}MB. TikTok's API only supports videos up to ${
+              MAX_ALLOWED_SIZE / (1024 * 1024)
+            }MB.`,
+          },
+          { status: 400 },
+        );
+      }
 
-      // Calculate total chunks precisely
-      const totalChunks = Math.ceil(videoSize / CHUNK_SIZE);
+      // Warn if video is larger than recommended size
+      const isLargeFile = videoSize > MAX_RECOMMENDED_SIZE;
+
+      // Dynamic chunk size calculation to ensure we don't exceed MAX_CHUNKS_ALLOWED
+      // Calculate minimum chunk size needed to keep total chunks <= MAX_CHUNKS_ALLOWED
+      const minChunkSize = Math.ceil(videoSize / MAX_CHUNKS_ALLOWED);
+
+      // Round up to nearest MB for cleaner numbers (TikTok might prefer this)
+      const MB = 1024 * 1024;
+      const chunkSize = Math.ceil(minChunkSize / MB) * MB;
+
+      console.log(`Calculated optimal chunk size: ${chunkSize} bytes`);
+
+      // Calculate total chunks based on our dynamic chunk size
+      const totalChunks = Math.ceil(videoSize / chunkSize);
 
       console.log(
-        `Using chunk size: ${CHUNK_SIZE} bytes, total chunks: ${totalChunks}`,
+        `Using chunk size: ${chunkSize} bytes, total chunks: ${totalChunks}`,
       );
 
       // First fetch creator info directly from TikTok API
@@ -205,14 +234,6 @@ export async function POST(request: Request) {
           "(Required for unaudited TikTok API clients)",
         );
 
-        // Extract hashtags from the caption (if any)
-        const hashtagRegex = /#(\w+)/g;
-        const hashtags = [];
-        let match;
-        while ((match = hashtagRegex.exec(caption)) !== null) {
-          hashtags.push(match[1]);
-        }
-
         // Step 1: Initialize video upload with TikTok using FILE_UPLOAD method with DIRECT POST
         console.log("Initializing TikTok video direct post");
 
@@ -233,7 +254,7 @@ export async function POST(request: Request) {
           source_info: {
             source: "FILE_UPLOAD",
             video_size: videoSize,
-            chunk_size: CHUNK_SIZE,
+            chunk_size: chunkSize,
             total_chunk_count: totalChunks,
           },
         };
@@ -292,15 +313,28 @@ export async function POST(request: Request) {
 
           // Look for chunk count error specifically
           if (responseText.includes("total chunk count is invalid")) {
-            return NextResponse.json(
-              {
-                error: "Invalid chunk configuration",
-                details:
-                  "TikTok rejected the chunk size configuration. Try with a smaller video file (under 50MB) or try again later.",
-                technicalDetails: responseText,
-              },
-              { status: 400 },
-            );
+            if (isLargeFile) {
+              return NextResponse.json(
+                {
+                  error: "Video file too large for TikTok",
+                  details: `Your video (${(videoSize / (1024 * 1024)).toFixed(
+                    2,
+                  )}MB) is too large for TikTok API direct upload. Please use a video smaller than 50MB.`,
+                  technicalDetails: responseText,
+                },
+                { status: 400 },
+              );
+            } else {
+              return NextResponse.json(
+                {
+                  error: "Invalid chunk configuration",
+                  details:
+                    "TikTok rejected the chunk size configuration. Please try with a smaller video file (under 50MB).",
+                  technicalDetails: responseText,
+                },
+                { status: 400 },
+              );
+            }
           }
 
           return NextResponse.json(
@@ -438,9 +472,9 @@ export async function POST(request: Request) {
 
           // Upload each chunk separately
           for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-            const start = chunkIndex * CHUNK_SIZE;
-            const end = Math.min(start + CHUNK_SIZE - 1, videoSize - 1);
-            const chunkSize = end - start + 1;
+            const start = chunkIndex * chunkSize;
+            const end = Math.min(start + chunkSize - 1, videoSize - 1);
+            const currentChunkSize = end - start + 1;
 
             // Extract the chunk from the video buffer
             const chunk = new Uint8Array(videoBuffer.slice(start, end + 1));
@@ -448,7 +482,7 @@ export async function POST(request: Request) {
             console.log(
               `Uploading chunk ${
                 chunkIndex + 1
-              }/${totalChunks}, bytes ${start}-${end}/${videoSize} (${chunkSize} bytes)`,
+              }/${totalChunks}, bytes ${start}-${end}/${videoSize} (${currentChunkSize} bytes)`,
             );
 
             // Set a timeout for this chunk upload - use longer timeout for larger chunks
@@ -465,7 +499,7 @@ export async function POST(request: Request) {
                   "Content-Type":
                     videoResponse.headers.get("content-type") || "video/mp4",
                   "Content-Range": `bytes ${start}-${end}/${videoSize}`,
-                  "Content-Length": chunkSize.toString(),
+                  "Content-Length": currentChunkSize.toString(),
                 },
                 body: chunk,
                 signal: chunkController.signal,
@@ -550,7 +584,9 @@ export async function POST(request: Request) {
           mediaUrl: mediaUrl,
           message:
             "Video uploaded to TikTok and is being processed for direct posting.",
-          note: "Your video will be posted with private (Only Me) visibility. You can change the visibility settings in the TikTok app after publishing is complete.",
+          note: isLargeFile
+            ? "Your video is large which may increase processing time. It will be posted with private (Only Me) visibility. You can change visibility settings in the TikTok app after publishing."
+            : "Your video will be posted with private (Only Me) visibility. You can change the visibility settings in the TikTok app after publishing is complete.",
         });
       } catch (infoError) {
         clearTimeout(infoTimeoutId);

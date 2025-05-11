@@ -54,7 +54,27 @@ export default function UploadForm({
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
+      const selectedFile = e.target.files[0];
+
+      // Check if file is too large (50MB for TikTok)
+      const MAX_TIKTOK_SIZE = 50 * 1024 * 1024; // 50MB
+
+      if (selectedFile.size > MAX_TIKTOK_SIZE && activeTab === "tiktok") {
+        setErrorMessages([
+          `This file is ${(selectedFile.size / (1024 * 1024)).toFixed(
+            2,
+          )}MB. TikTok has a 50MB file size limit. Please select a smaller file for TikTok uploads.`,
+        ]);
+        setUploadStatus("error");
+      } else {
+        // Clear any previous errors
+        if (errorMessages.length > 0) {
+          setErrorMessages([]);
+          setUploadStatus("idle");
+        }
+      }
+
+      setFile(selectedFile);
     }
   };
 
@@ -84,6 +104,30 @@ export default function UploadForm({
 
   const handleTabChange = (value: string) => {
     setActiveTab(value);
+
+    // Check if current file is too large for TikTok when switching to that tab
+    if (value === "tiktok" && file) {
+      const MAX_TIKTOK_SIZE = 50 * 1024 * 1024; // 50MB
+      if (file.size > MAX_TIKTOK_SIZE) {
+        setErrorMessages([
+          `This file is ${(file.size / (1024 * 1024)).toFixed(
+            2,
+          )}MB. TikTok has a 50MB file size limit. Please select a smaller file for TikTok uploads.`,
+        ]);
+        setUploadStatus("error");
+      } else if (errorMessages.length > 0 && uploadStatus === "error") {
+        // Clear TikTok-specific size errors when switching back
+        const nonSizeErrors = errorMessages.filter(
+          (msg) => !msg.includes("TikTok has a 50MB file size limit"),
+        );
+        if (nonSizeErrors.length !== errorMessages.length) {
+          setErrorMessages(nonSizeErrors);
+          if (nonSizeErrors.length === 0) {
+            setUploadStatus("idle");
+          }
+        }
+      }
+    }
   };
 
   const handleUpload = async (platform: string) => {
@@ -133,7 +177,9 @@ export default function UploadForm({
         } catch (error) {
           console.error("Error in YouTube upload:", error);
           uploadErrors.push(
-            `YouTube: ${error instanceof Error ? error.message : "Unknown error"}`,
+            `YouTube: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`,
           );
         }
       } else if (platform === "instagram" && instagramConnected) {
@@ -223,7 +269,9 @@ export default function UploadForm({
         } catch (error) {
           console.error("Error uploading to Instagram:", error);
           uploadErrors.push(
-            `Instagram: ${error instanceof Error ? error.message : "Unknown error"}`,
+            `Instagram: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`,
           );
         }
       } else if (platform === "tiktok" && tiktokConnected) {
@@ -250,7 +298,10 @@ export default function UploadForm({
             // If we can't parse JSON, get the response text
             const errorText = await tiktokRes.text();
             throw new Error(
-              `TikTok API returned non-JSON response: ${errorText.substring(0, 100)}`,
+              `TikTok API returned non-JSON response: ${errorText.substring(
+                0,
+                100,
+              )}`,
             );
           }
 
@@ -298,7 +349,9 @@ export default function UploadForm({
 
                       // Show detailed instructions to the user
                       setErrorMessages([
-                        `TikTok: ${statusData.message}${statusData.note ? `\n${statusData.note}` : ""}`,
+                        `TikTok: ${statusData.message}${
+                          statusData.note ? `\n${statusData.note}` : ""
+                        }`,
                       ]);
 
                       // Container published successfully, no need to poll anymore
@@ -313,7 +366,9 @@ export default function UploadForm({
                         statusData.note !== tiktokData.note
                       ) {
                         setErrorMessages([
-                          `TikTok: ${statusData.message}${statusData.note ? `\n${statusData.note}` : ""}`,
+                          `TikTok: ${statusData.message}${
+                            statusData.note ? `\n${statusData.note}` : ""
+                          }`,
                         ]);
                       }
 
@@ -323,7 +378,9 @@ export default function UploadForm({
                       console.error("TikTok processing error:", statusData);
                       setUploadStatus("error");
                       setErrorMessages([
-                        `TikTok: ${statusData.error}${statusData.details ? ` - ${statusData.details}` : ""}`,
+                        `TikTok: ${statusData.error}${
+                          statusData.details ? ` - ${statusData.details}` : ""
+                        }`,
                       ]);
                     }
                   } else {
@@ -335,7 +392,9 @@ export default function UploadForm({
                   // Show the error in the UI
                   setUploadStatus("error");
                   setErrorMessages([
-                    `TikTok status check failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+                    `TikTok status check failed: ${
+                      error instanceof Error ? error.message : "Unknown error"
+                    }`,
                   ]);
                 }
               };
@@ -372,7 +431,9 @@ export default function UploadForm({
         } catch (error) {
           console.error("Error uploading to TikTok:", error);
           uploadErrors.push(
-            `TikTok: ${error instanceof Error ? error.message : "Unknown error"}`,
+            `TikTok: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`,
           );
         }
       }
@@ -393,7 +454,9 @@ export default function UploadForm({
       console.error("Upload failed", err);
       setUploadStatus("error");
       setErrorMessages([
-        `General error: ${err instanceof Error ? err.message : "Unknown error"}`,
+        `General error: ${
+          err instanceof Error ? err.message : "Unknown error"
+        }`,
       ]);
     }
     setIsUploading(false);
