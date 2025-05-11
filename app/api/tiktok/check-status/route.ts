@@ -11,14 +11,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Parse JSON body; expects publishId, accessToken, mediaUrl
-    const { publishId, accessToken, mediaUrl } = await request.json();
+    // Parse JSON body; expects publishId, accessToken, mediaUrl (and now originalMediaUrl for compressed videos)
+    const { publishId, accessToken, mediaUrl, originalMediaUrl } =
+      await request.json();
 
     if (!publishId || !accessToken) {
       console.error("Missing required fields");
       return NextResponse.json(
         { error: "Missing required fields" },
-        { status: 400 },
+        { status: 400 }
       );
     }
 
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
           },
           body: statusPayload,
           signal: controller.signal,
-        },
+        }
       );
       clearTimeout(timeoutId);
 
@@ -75,7 +76,7 @@ export async function POST(request: Request) {
               statusResponse.status
             }: ${responseText.substring(0, 200)}`,
           },
-          { status: 500 },
+          { status: 500 }
         );
       }
 
@@ -103,7 +104,7 @@ export async function POST(request: Request) {
               "Failed to parse status check response as JSON. Raw response: " +
               responseText.substring(0, 100),
           },
-          { status: 500 },
+          { status: 500 }
         );
       }
 
@@ -120,14 +121,26 @@ export async function POST(request: Request) {
           statusData.data.status === "PUBLISHED" ||
           statusData.data.status === "UPLOAD_SUCCESSFUL"
         ) {
-          // Delete the blob after successful upload
+          // Delete the blob files after successful upload
           if (mediaUrl) {
             try {
-              console.log("Deleting blob after successful upload");
+              console.log("Deleting compressed blob after successful upload");
               await del(mediaUrl);
-              console.log("Blob deleted successfully");
+              console.log("Compressed blob deleted successfully");
             } catch (delError) {
-              console.error("Error deleting blob:", delError);
+              console.error("Error deleting compressed blob:", delError);
+              // Continue even if blob deletion fails
+            }
+          }
+
+          // Also delete the original blob if it exists and is different from mediaUrl
+          if (originalMediaUrl && originalMediaUrl !== mediaUrl) {
+            try {
+              console.log("Deleting original blob after successful upload");
+              await del(originalMediaUrl);
+              console.log("Original blob deleted successfully");
+            } catch (delError) {
+              console.error("Error deleting original blob:", delError);
               // Continue even if blob deletion fails
             }
           }
@@ -185,7 +198,7 @@ export async function POST(request: Request) {
             error: "TikTok status check timeout",
             details: "The status check took too long and was aborted.",
           },
-          { status: 504 },
+          { status: 504 }
         );
       }
 
