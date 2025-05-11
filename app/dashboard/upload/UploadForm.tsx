@@ -835,9 +835,9 @@ export default function UploadForm({
                       Your TikTok account is connected and ready to post videos.
                       Toggle the switch to disconnect your account.
                       <div className="mt-2 text-amber-600 text-sm">
-                        <strong>Note:</strong> Videos will be posted with
-                        private visibility (Only Me). You can change visibility
-                        settings in the TikTok app after posting.
+                        <strong>Note:</strong> Videos will be uploaded to your
+                        TikTok inbox. You&apos;ll receive a notification in the
+                        TikTok app where you can edit and publish your video.
                       </div>
                     </AlertDescription>
                   </Alert>
