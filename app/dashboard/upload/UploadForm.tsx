@@ -259,26 +259,19 @@ export default function UploadForm({
         try {
           console.log("Starting TikTok upload with blob URL:", blobResult.url);
 
-          // Check if the file is large (> 80MB)
+          // Check if this is a large file that might take longer
           const fileSizeMB = file.size / (1024 * 1024);
-          const MAX_TIKTOK_SIZE = 80;
-          const isLargeFile = fileSizeMB > MAX_TIKTOK_SIZE;
-
-          if (isLargeFile) {
-            console.log(
-              `Large file detected (${fileSizeMB.toFixed(2)}MB), using PULL_FROM_URL method...`,
-            );
-            setIsCompressing(true); // Show "processing" UI
+          if (fileSizeMB > 50) {
+            // Show processing indicator for larger files
+            setIsCompressing(true);
           }
 
-          // Send to TikTok API with flag indicating this is a large file
           const tiktokRes = await fetch("/api/tiktok/upload", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               mediaUrl: blobResult.url,
               caption: description || title,
-              isCompressed: isLargeFile, // Flag to use PULL_FROM_URL method
             }),
           });
           setIsCompressing(false);
@@ -303,9 +296,7 @@ export default function UploadForm({
               // Set success status and message
               setUploadStatus("success");
               setErrorMessages([
-                tiktokData.usesPullFromUrl
-                  ? "TikTok: Your video has been sent to TikTok. This may take longer for large videos."
-                  : "TikTok: Your video is being processed. Check your TikTok app notifications to continue editing and publishing.",
+                "TikTok: Your video is being processed. Check your TikTok app notifications to continue editing and publishing.",
               ]);
 
               // Start polling for status
@@ -537,10 +528,10 @@ export default function UploadForm({
                       <p className="font-medium">{file.name}</p>
                       <p className="text-sm text-gray-500">
                         {(file.size / (1024 * 1024)).toFixed(2)} MB
-                        {file.size > 80 * 1024 * 1024 &&
+                        {file.size > 50 * 1024 * 1024 &&
                           activeTab === "tiktok" && (
                             <span className="block text-amber-600 mt-1">
-                              Large file will be processed directly by TikTok
+                              Large files may take longer to process
                             </span>
                           )}
                       </p>
@@ -842,9 +833,6 @@ export default function UploadForm({
                       <>
                         <UploadIcon className="mr-2 h-4 w-4" />
                         Upload to TikTok
-                        {file && file.size > 80 * 1024 * 1024 && (
-                          <span className="ml-1">(Large File)</span>
-                        )}
                       </>
                     )}
                   </Button>

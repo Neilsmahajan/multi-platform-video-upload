@@ -11,9 +11,9 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
 // Define maximum chunk size for TikTok uploads
-const MAX_CHUNK_SIZE = 20 * 1024 * 1024; // 20MB per chunk
-// Define size threshold for switching to PULL_FROM_URL
-const PULL_FROM_URL_THRESHOLD = 75 * 1024 * 1024; // 75MB
+// TikTok's documentation says each chunk must be at least 5MB but no greater than 64MB
+const MIN_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_CHUNK_SIZE = 64 * 1024 * 1024; // 64MB
 
 export async function POST(request: Request) {
   try {
@@ -27,11 +27,7 @@ export async function POST(request: Request) {
     console.log("Processing TikTok upload for user:", session.user.id);
 
     // Parse JSON body; expects mediaUrl, caption
-    const {
-      mediaUrl,
-      caption = "",
-      isCompressed = false,
-    } = await request.json();
+    const { mediaUrl, caption = "" } = await request.json();
 
     if (!mediaUrl) {
       console.error("Missing required fields", {
@@ -66,40 +62,12 @@ export async function POST(request: Request) {
 
     console.log("Found TikTok account with access token");
 
-    // First, get the video file metadata from the blob URL
-    console.log("Getting video file metadata from blob:", mediaUrl);
+    // First, fetch the video content from blob storage
+    console.log("Fetching video file from blob:", mediaUrl);
 
     try {
-      // If this is a large file, use PULL_FROM_URL method
-      let videoSize = 0;
-
-      if (!isCompressed) {
-        // Check file size with HEAD request
-        const headResponse = await fetch(mediaUrl, { method: "HEAD" });
-        if (!headResponse.ok) {
-          console.error("Failed to get video metadata", {
-            status: headResponse.status,
-          });
-          return NextResponse.json(
-            { error: "Failed to get video metadata" },
-            { status: 500 },
-          );
-        }
-
-        // Get content length (file size)
-        const contentLength = headResponse.headers.get("content-length");
-        videoSize = contentLength ? parseInt(contentLength, 10) : 0;
-        console.log(
-          `Video size from headers: ${videoSize} bytes (${(
-            videoSize /
-            (1024 * 1024)
-          ).toFixed(2)} MB)`,
-        );
-      }
-
       // First fetch creator info directly from TikTok API
       console.log("Fetching TikTok creator info");
-
       const creatorInfoResponse = await fetch(
         "https://open.tiktokapis.com/v2/post/publish/creator_info/query/",
         {
@@ -130,7 +98,6 @@ export async function POST(request: Request) {
       // Get response text and parse JSON
       const creatorInfoText = await creatorInfoResponse.text();
       console.log("Creator info response:", creatorInfoText);
-      console.log("Creator info parsed successfully");
 
       // For unaudited clients, we must use SELF_ONLY (private) privacy level
       const privacyLevel = "SELF_ONLY";
@@ -141,113 +108,127 @@ export async function POST(request: Request) {
         "(Required for unaudited TikTok API clients)",
       );
 
-      // Determine upload method based on file size
-      const usePullFromUrl =
-        videoSize > PULL_FROM_URL_THRESHOLD || isCompressed;
+      // Get information about the file first with a HEAD request
+      const headResponse = await fetch(mediaUrl, { method: "HEAD" });
+      if (!headResponse.ok) {
+        console.error("Failed to get video metadata", {
+          status: headResponse.status,
+        });
+        return NextResponse.json(
+          { error: "Failed to get video metadata" },
+          { status: 500 },
+        );
+      }
+
+      // Get content length (file size) and content type
+      const contentType =
+        headResponse.headers.get("content-type") || "video/mp4";
+      const contentLength = headResponse.headers.get("content-length");
+      const videoSize = contentLength ? parseInt(contentLength, 10) : 0;
+
       console.log(
-        `Using ${
-          usePullFromUrl ? "PULL_FROM_URL" : "FILE_UPLOAD"
-        } method for TikTok upload`,
+        `Video size from headers: ${videoSize} bytes (${(
+          videoSize /
+          (1024 * 1024)
+        ).toFixed(2)} MB)`,
+      );
+      console.log(`Content type: ${contentType}`);
+
+      // Calculate optimal chunk size based on file size
+      // - For files under 5MB, use the file size as chunk size (single chunk)
+      // - For files between 5MB and 64MB, use the file size as chunk size (single chunk)
+      // - For files over 64MB, use 64MB chunks
+      let chunkSize;
+      if (videoSize <= MIN_CHUNK_SIZE) {
+        chunkSize = videoSize; // Single chunk for small files
+      } else if (videoSize <= MAX_CHUNK_SIZE) {
+        chunkSize = videoSize; // Single chunk for medium files
+      } else {
+        chunkSize = MAX_CHUNK_SIZE; // Multiple chunks for large files
+      }
+
+      const totalChunkCount = Math.ceil(videoSize / chunkSize);
+
+      console.log("Chunking configuration:", {
+        videoSize,
+        chunkSize,
+        totalChunkCount,
+      });
+
+      // Start the video upload process with TikTok
+      console.log("Initializing TikTok video upload with FILE_UPLOAD method");
+      const initResponse = await fetch(
+        "https://open.tiktokapis.com/v2/post/publish/video/init/",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${tiktokAccount.access_token}`,
+            "Content-Type": "application/json; charset=UTF-8",
+          },
+          body: JSON.stringify({
+            post_info: {
+              title: caption.substring(0, 2200), // TikTok limits captions to 2200 chars
+              privacy_level: privacyLevel,
+              disable_duet: false,
+              disable_comment: false,
+              disable_stitch: false,
+              video_cover_timestamp_ms: 0, // Use first frame as cover
+            },
+            source_info: {
+              source: "FILE_UPLOAD",
+              video_size: videoSize,
+              chunk_size: chunkSize,
+              total_chunk_count: totalChunkCount,
+            },
+          }),
+        },
       );
 
-      if (usePullFromUrl) {
-        // For large files or compressed files, use PULL_FROM_URL method
-        console.log(
-          "Initializing TikTok video upload with PULL_FROM_URL method",
-        );
+      const responseText = await initResponse.text();
 
-        const initResponse = await fetch(
-          "https://open.tiktokapis.com/v2/post/publish/video/init/",
+      if (!initResponse.ok) {
+        console.error("Failed to initialize TikTok upload:", {
+          status: initResponse.status,
+          response: responseText.substring(0, 500),
+        });
+
+        return NextResponse.json(
           {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${tiktokAccount.access_token}`,
-              "Content-Type": "application/json; charset=UTF-8",
-            },
-            body: JSON.stringify({
-              post_info: {
-                title: caption.substring(0, 2200),
-                privacy_level: privacyLevel,
-                disable_duet: false,
-                disable_comment: false,
-                disable_stitch: false,
-                video_cover_timestamp_ms: 0,
-              },
-              source_info: {
-                source: "PULL_FROM_URL",
-                video_url: mediaUrl,
-              },
-            }),
+            error: "Failed to initialize TikTok direct post",
+            details: `TikTok API returned ${
+              initResponse.status
+            }: ${responseText.substring(0, 200)}`,
           },
+          { status: initResponse.status },
         );
+      }
 
-        const responseText = await initResponse.text();
+      try {
+        const initData = JSON.parse(responseText);
+        console.log("TikTok init response:", initData);
 
-        if (!initResponse.ok) {
-          console.error(
-            "Failed to initialize TikTok upload with PULL_FROM_URL:",
-            {
-              status: initResponse.status,
-              response: responseText.substring(0, 500),
-            },
-          );
-
+        if (
+          !initData.data ||
+          !initData.data.publish_id ||
+          !initData.data.upload_url
+        ) {
+          console.error("Invalid response from TikTok init API:", initData);
           return NextResponse.json(
-            {
-              error: "Failed to initialize TikTok direct post",
-              details: `TikTok API returned ${
-                initResponse.status
-              }: ${responseText.substring(0, 200)}`,
-            },
-            { status: initResponse.status },
-          );
-        }
-
-        // Parse response
-        try {
-          const initData = JSON.parse(responseText);
-          console.log("TikTok PULL_FROM_URL init response:", initData);
-
-          if (!initData.data || !initData.data.publish_id) {
-            console.error("Invalid response from TikTok init API:", initData);
-            return NextResponse.json(
-              { error: "Invalid response from TikTok" },
-              { status: 500 },
-            );
-          }
-
-          const publishId = initData.data.publish_id;
-          console.log(
-            "TikTok PULL_FROM_URL initialized with publish_id:",
-            publishId,
-          );
-
-          // Return status info - TikTok will pull the video from our URL
-          return NextResponse.json({
-            status: "processing",
-            publishId: publishId,
-            accessToken: tiktokAccount.access_token,
-            mediaUrl: mediaUrl,
-            usesPullFromUrl: true,
-            message: "Video URL sent to TikTok for processing.",
-            note: "TikTok is pulling your video. You'll receive a notification in the TikTok app when it's ready to edit.",
-          });
-        } catch (parseError) {
-          console.error(
-            "Failed to parse TikTok init response as JSON:",
-            parseError,
-          );
-          return NextResponse.json(
-            {
-              error: "Invalid response from TikTok",
-              details: "Failed to parse TikTok API response as JSON",
-            },
+            { error: "Invalid response from TikTok" },
             { status: 500 },
           );
         }
-      } else {
-        // For smaller files, continue with FILE_UPLOAD method
-        // Fetch video content
+
+        const publishId = initData.data.publish_id;
+        const uploadUrl = initData.data.upload_url;
+
+        console.log(
+          "TikTok direct post initialized with publish_id:",
+          publishId,
+        );
+        console.log("TikTok upload URL:", uploadUrl);
+
+        // Now fetch the entire video first
         const videoResponse = await fetch(mediaUrl);
         if (!videoResponse.ok) {
           console.error("Failed to fetch video from blob URL", {
@@ -261,257 +242,143 @@ export async function POST(request: Request) {
 
         // Get video as array buffer
         const videoBuffer = await videoResponse.arrayBuffer();
-        const videoSize = videoBuffer.byteLength;
-        console.log("Video size:", videoSize, "bytes");
 
-        // Calculate chunking parameters
-        const useChunking = videoSize > MAX_CHUNK_SIZE;
-        const chunkSize = useChunking ? MAX_CHUNK_SIZE : videoSize;
-        const totalChunkCount = useChunking
-          ? Math.ceil(videoSize / MAX_CHUNK_SIZE)
-          : 1;
+        // Upload the video in chunks to TikTok
+        if (totalChunkCount === 1) {
+          // Single chunk upload (entire file)
+          console.log("Using single chunk upload for the entire file");
 
-        console.log("Chunking configuration:", {
-          useChunking,
-          videoSize,
-          chunkSize,
-          totalChunkCount,
-        });
-
-        // Initialize video upload with FILE_UPLOAD method
-        console.log(
-          "Initializing TikTok video direct post with FILE_UPLOAD method:",
-          {
-            videoSize,
-            chunkSize,
-            totalChunkCount,
-          },
-        );
-
-        const initResponse = await fetch(
-          "https://open.tiktokapis.com/v2/post/publish/video/init/",
-          {
-            method: "POST",
+          const uploadResponse = await fetch(uploadUrl, {
+            method: "PUT",
             headers: {
-              Authorization: `Bearer ${tiktokAccount.access_token}`,
-              "Content-Type": "application/json; charset=UTF-8",
+              "Content-Type": contentType,
+              "Content-Range": `bytes 0-${videoSize - 1}/${videoSize}`,
+              "Content-Length": videoSize.toString(),
             },
-            body: JSON.stringify({
-              post_info: {
-                title: caption.substring(0, 2200),
-                privacy_level: privacyLevel,
-                disable_duet: false,
-                disable_comment: false,
-                disable_stitch: false,
-                video_cover_timestamp_ms: 0,
-              },
-              source_info: {
-                source: "FILE_UPLOAD",
-                video_size: videoSize,
-                chunk_size: chunkSize,
-                total_chunk_count: totalChunkCount,
-              },
-            }),
-          },
-        );
+            body: new Uint8Array(videoBuffer),
+          });
 
-        const responseText = await initResponse.text();
+          if (!uploadResponse.ok) {
+            let uploadError;
+            try {
+              uploadError = await uploadResponse.text();
+            } catch {
+              uploadError = "Could not read error response";
+            }
 
-        if (!initResponse.ok) {
-          console.error(
-            "Failed to initialize TikTok upload with FILE_UPLOAD:",
-            {
-              status: initResponse.status,
-              response: responseText.substring(0, 500),
-            },
-          );
+            console.error("Failed to upload video to TikTok:", {
+              status: uploadResponse.status,
+              statusText: uploadResponse.statusText,
+              errorText: uploadError,
+              contentRange: `bytes 0-${videoSize - 1}/${videoSize}`,
+              contentType,
+            });
 
-          return NextResponse.json(
-            {
-              error: "Failed to initialize TikTok direct post",
-              details: `TikTok API returned ${
-                initResponse.status
-              }: ${responseText.substring(0, 200)}`,
-            },
-            { status: initResponse.status },
-          );
-        }
-
-        // Parse init response
-        try {
-          const initData = JSON.parse(responseText);
-          console.log("TikTok FILE_UPLOAD init response:", initData);
-
-          if (
-            !initData.data ||
-            !initData.data.publish_id ||
-            !initData.data.upload_url
-          ) {
-            console.error("Invalid response from TikTok init API:", initData);
             return NextResponse.json(
-              { error: "Invalid response from TikTok" },
+              {
+                error: "Failed to upload video to TikTok",
+                details: `Upload failed with status ${uploadResponse.status}: ${uploadResponse.statusText}`,
+              },
               { status: 500 },
             );
           }
 
-          const publishId = initData.data.publish_id;
-          const uploadUrl = initData.data.upload_url;
-          console.log(
-            "TikTok direct post initialized with publish_id:",
-            publishId,
-          );
-          console.log("TikTok upload URL:", uploadUrl);
+          console.log("Video successfully uploaded to TikTok");
+        } else {
+          // Multi-chunk upload
+          console.log(`Starting ${totalChunkCount}-chunk upload`);
 
-          // Handle file upload based on chunking
-          if (totalChunkCount === 1) {
-            // Single chunk upload
+          for (let chunkIndex = 0; chunkIndex < totalChunkCount; chunkIndex++) {
+            const startByte = chunkIndex * chunkSize;
+            const endByte = Math.min(
+              (chunkIndex + 1) * chunkSize - 1,
+              videoSize - 1,
+            );
+            const currentChunkSize = endByte - startByte + 1;
+
             console.log(
-              "Using single chunk upload (file size under chunk limit)",
+              `Uploading chunk ${chunkIndex + 1}/${totalChunkCount}:`,
+              {
+                startByte,
+                endByte,
+                chunkSize: currentChunkSize,
+              },
             );
 
-            const uploadResponse = await fetch(uploadUrl, {
+            // Create chunk data from the video buffer
+            const chunkData = new Uint8Array(
+              videoBuffer.slice(startByte, endByte + 1),
+            );
+
+            const chunkResponse = await fetch(uploadUrl, {
               method: "PUT",
               headers: {
-                "Content-Type":
-                  videoResponse.headers.get("content-type") || "video/mp4",
-                "Content-Range": `bytes 0-${videoSize - 1}/${videoSize}`,
-                "Content-Length": videoSize.toString(),
+                "Content-Type": contentType,
+                "Content-Range": `bytes ${startByte}-${endByte}/${videoSize}`,
+                "Content-Length": currentChunkSize.toString(),
               },
-              body: new Uint8Array(videoBuffer),
+              body: chunkData,
             });
 
-            if (!uploadResponse.ok) {
-              let uploadError;
+            if (!chunkResponse.ok) {
+              let chunkError;
               try {
-                uploadError = await uploadResponse.text();
+                chunkError = await chunkResponse.text();
               } catch {
-                uploadError = "Could not read error response";
+                chunkError = "Could not read error response";
               }
 
-              console.error("Failed to upload video to TikTok:", {
-                status: uploadResponse.status,
-                statusText: uploadResponse.statusText,
-                errorText: uploadError?.substring(0, 500),
-              });
+              console.error(
+                `Failed to upload chunk ${chunkIndex + 1}/${totalChunkCount}:`,
+                {
+                  status: chunkResponse.status,
+                  statusText: chunkResponse.statusText,
+                  errorText: chunkError,
+                  contentRange: `bytes ${startByte}-${endByte}/${videoSize}`,
+                },
+              );
 
               return NextResponse.json(
                 {
-                  error: "Failed to upload video to TikTok",
-                  details: `Upload failed with status ${uploadResponse.status}: ${uploadResponse.statusText}`,
+                  error: "Failed to upload video chunk to TikTok",
+                  details: `Chunk ${chunkIndex + 1} upload failed with status ${
+                    chunkResponse.status
+                  }: ${chunkResponse.statusText}`,
                 },
-                { status: uploadResponse.status },
+                { status: 500 },
               );
             }
 
-            console.log("Video successfully uploaded to TikTok");
-          } else {
-            // Multi-chunk upload
             console.log(
-              `Starting multi-chunk upload with ${totalChunkCount} chunks`,
+              `Chunk ${chunkIndex + 1}/${totalChunkCount} uploaded successfully`,
             );
-
-            for (
-              let chunkIndex = 0;
-              chunkIndex < totalChunkCount;
-              chunkIndex++
-            ) {
-              const startByte = chunkIndex * chunkSize;
-              const endByte = Math.min(
-                (chunkIndex + 1) * chunkSize - 1,
-                videoSize - 1,
-              );
-              const currentChunkSize = endByte - startByte + 1;
-
-              console.log(
-                `Uploading chunk ${chunkIndex + 1}/${totalChunkCount}:`,
-                {
-                  startByte,
-                  endByte,
-                  chunkSize: currentChunkSize,
-                },
-              );
-
-              // Create chunk data from the video buffer
-              const chunkData = new Uint8Array(
-                videoBuffer.slice(startByte, endByte + 1),
-              );
-
-              const chunkResponse = await fetch(uploadUrl, {
-                method: "PUT",
-                headers: {
-                  "Content-Type":
-                    videoResponse.headers.get("content-type") || "video/mp4",
-                  "Content-Range": `bytes ${startByte}-${endByte}/${videoSize}`,
-                  "Content-Length": currentChunkSize.toString(),
-                },
-                body: chunkData,
-              });
-
-              if (!chunkResponse.ok) {
-                let chunkError;
-                try {
-                  chunkError = await chunkResponse.text();
-                } catch {
-                  chunkError = "Could not read error response";
-                }
-
-                console.error(
-                  `Failed to upload chunk ${
-                    chunkIndex + 1
-                  }/${totalChunkCount}:`,
-                  {
-                    status: chunkResponse.status,
-                    statusText: chunkResponse.statusText,
-                    errorText: chunkError?.substring(0, 500),
-                  },
-                );
-
-                return NextResponse.json(
-                  {
-                    error: "Failed to upload video chunk to TikTok",
-                    details: `Chunk ${
-                      chunkIndex + 1
-                    } upload failed with status ${chunkResponse.status}: ${
-                      chunkResponse.statusText
-                    }`,
-                  },
-                  { status: chunkResponse.status },
-                );
-              }
-
-              console.log(
-                `Chunk ${
-                  chunkIndex + 1
-                }/${totalChunkCount} uploaded successfully`,
-              );
-            }
-
-            console.log("All chunks uploaded successfully");
           }
 
-          // Return success response
-          return NextResponse.json({
-            status: "processing",
-            publishId: publishId,
-            accessToken: tiktokAccount.access_token,
-            mediaUrl: mediaUrl,
-            message:
-              "Video uploaded to TikTok and is being processed for direct posting.",
-            note: "Your video will be posted with private (Only Me) visibility. You can change the visibility settings in the TikTok app after publishing is complete.",
-          });
-        } catch (parseError) {
-          console.error(
-            "Failed to parse TikTok init response as JSON:",
-            parseError,
-          );
-          return NextResponse.json(
-            {
-              error: "Invalid response from TikTok",
-              details: "Failed to parse TikTok API response as JSON",
-            },
-            { status: 500 },
-          );
+          console.log("All chunks uploaded successfully");
         }
+
+        // Return success response
+        return NextResponse.json({
+          status: "processing",
+          publishId: publishId,
+          accessToken: tiktokAccount.access_token,
+          mediaUrl: mediaUrl,
+          message:
+            "Video uploaded to TikTok and is being processed for direct posting.",
+          note: "Your video will be posted with private (Only Me) visibility. You can change the visibility settings in the TikTok app after publishing is complete.",
+        });
+      } catch (parseError) {
+        console.error(
+          "Failed to parse TikTok init response as JSON:",
+          parseError,
+        );
+        return NextResponse.json(
+          {
+            error: "Invalid response from TikTok",
+            details: "Failed to parse TikTok API response as JSON",
+          },
+          { status: 500 },
+        );
       }
     } catch (error) {
       console.error("Error processing TikTok upload:", error);
