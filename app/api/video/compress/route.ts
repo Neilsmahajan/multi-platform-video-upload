@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     if (!sourceUrl || !originalFileName) {
       return NextResponse.json(
         { error: "Missing required fields" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -44,11 +44,11 @@ export async function POST(request: Request) {
       await ffmpeg.load({
         coreURL: await toBlobURL(
           "https://unpkg.com/@ffmpeg/core@0.12.6/dist/ffmpeg-core.wasm",
-          "application/wasm"
+          "application/wasm",
         ),
         wasmURL: await toBlobURL(
           "https://unpkg.com/@ffmpeg/core@0.12.6/dist/ffmpeg-core.wasm",
-          "application/wasm"
+          "application/wasm",
         ),
       });
 
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
       const targetSizeMB = Math.min(sourceSizeMB * 0.8, 75);
       const durationSeconds = 180; // Assuming 3 minute video (adjust if needed)
       const videoBitrate = Math.floor(
-        (targetSizeMB * 8 * 1024) / durationSeconds
+        (targetSizeMB * 8 * 1024) / durationSeconds,
       );
       const audioBitrate = "128k";
 
@@ -125,7 +125,7 @@ export async function POST(request: Request) {
         `Original size: ${sourceSizeMB.toFixed(2)} MB, Compressed size: ${(
           compressedBlob.size /
           (1024 * 1024)
-        ).toFixed(2)} MB`
+        ).toFixed(2)} MB`,
       );
 
       // Return the URL of the compressed file
@@ -145,7 +145,7 @@ export async function POST(request: Request) {
               ? ffmpegError.message
               : "Unknown FFmpeg error",
         },
-        { status: 500 }
+        { status: 500 },
       );
     }
   } catch (error) {
@@ -155,7 +155,7 @@ export async function POST(request: Request) {
         error: "Video compression failed",
         details: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

@@ -94,9 +94,13 @@ export default function UploadForm({
     setActiveTab(value);
 
     // Clear TikTok-specific errors when switching to another tab
-    if (value !== "tiktok" && errorMessages.length > 0 && uploadStatus === "error") {
+    if (
+      value !== "tiktok" &&
+      errorMessages.length > 0 &&
+      uploadStatus === "error"
+    ) {
       const nonTikTokErrors = errorMessages.filter(
-        (msg) => !msg.includes("TikTok")
+        (msg) => !msg.includes("TikTok"),
       );
       if (nonTikTokErrors.length !== errorMessages.length) {
         setErrorMessages(nonTikTokErrors);
@@ -154,7 +158,8 @@ export default function UploadForm({
         } catch (error) {
           console.error("Error in YouTube upload:", error);
           uploadErrors.push(
-            `YouTube: ${error instanceof Error ? error.message : "Unknown error"
+            `YouTube: ${
+              error instanceof Error ? error.message : "Unknown error"
             }`,
           );
         }
@@ -245,7 +250,8 @@ export default function UploadForm({
         } catch (error) {
           console.error("Error uploading to Instagram:", error);
           uploadErrors.push(
-            `Instagram: ${error instanceof Error ? error.message : "Unknown error"
+            `Instagram: ${
+              error instanceof Error ? error.message : "Unknown error"
             }`,
           );
         }
@@ -253,311 +259,154 @@ export default function UploadForm({
         try {
           console.log("Starting TikTok upload with blob URL:", blobResult.url);
 
-          // Check if the file needs compression (> 80MB)
+          // Check if the file is large (> 80MB)
           const fileSizeMB = file.size / (1024 * 1024);
           const MAX_TIKTOK_SIZE = 80;
+          const isLargeFile = fileSizeMB > MAX_TIKTOK_SIZE;
 
-          if (fileSizeMB > MAX_TIKTOK_SIZE) {
-            console.log(`File size ${fileSizeMB.toFixed(2)}MB exceeds TikTok limit. Compressing...`);
-            setIsCompressing(true);
+          if (isLargeFile) {
+            console.log(
+              `Large file detected (${fileSizeMB.toFixed(2)}MB), using PULL_FROM_URL method...`,
+            );
+            setIsCompressing(true); // Show "processing" UI
+          }
 
-            // Call compression API
-            const compressRes = await fetch("/api/video/compress", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                sourceUrl: blobResult.url,
-                originalFileName: file.name,
-              }),
-            });
+          // Send to TikTok API with flag indicating this is a large file
+          const tiktokRes = await fetch("/api/tiktok/upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              mediaUrl: blobResult.url,
+              caption: description || title,
+              isCompressed: isLargeFile, // Flag to use PULL_FROM_URL method
+            }),
+          });
+          setIsCompressing(false);
 
-            if (!compressRes.ok) {
-              throw new Error(`Video compression failed: ${compressRes.status}`);
-            }
+          // Process TikTok response
+          let tiktokData;
+          try {
+            tiktokData = await tiktokRes.json();
+          } catch (jsonError) {
+            console.error(
+              "Failed to parse TikTok response as JSON:",
+              jsonError,
+            );
+            const errorText = await tiktokRes.text();
+            throw new Error(
+              `TikTok API returned non-JSON response: ${errorText.substring(0, 100)}`,
+            );
+          }
 
-            const compressData = await compressRes.json();
-            setIsCompressing(false);
+          if (tiktokRes.ok) {
+            if (tiktokData.status === "processing" && tiktokData.publishId) {
+              // Set success status and message
+              setUploadStatus("success");
+              setErrorMessages([
+                tiktokData.usesPullFromUrl
+                  ? "TikTok: Your video has been sent to TikTok. This may take longer for large videos."
+                  : "TikTok: Your video is being processed. Check your TikTok app notifications to continue editing and publishing.",
+              ]);
 
-            if (compressData.compressedUrl) {
-              console.log("Video compressed successfully:", compressData.compressedUrl);
+              // Start polling for status
+              const checkStatus = async () => {
+                try {
+                  const statusRes = await fetch("/api/tiktok/check-status", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      publishId: tiktokData.publishId,
+                      accessToken: tiktokData.accessToken,
+                      mediaUrl: blobResult.url,
+                    }),
+                  });
 
-              // Use the compressed URL for TikTok upload
-              const tiktokRes = await fetch("/api/tiktok/upload", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  mediaUrl: compressData.compressedUrl,
-                  caption: description || title,
-                  isCompressed: true,
-                }),
-              });
+                  let statusData;
+                  try {
+                    statusData = await statusRes.json();
+                  } catch (jsonError) {
+                    console.error(
+                      "Failed to parse status response as JSON:",
+                      jsonError,
+                    );
+                    throw new Error(
+                      "Status check returned invalid JSON response",
+                    );
+                  }
 
-              let tiktokData;
-              try {
-                tiktokData = await tiktokRes.json();
-              } catch (jsonError) {
-                console.error(
-                  "Failed to parse TikTok response as JSON:",
-                  jsonError,
-                );
-                const errorText = await tiktokRes.text();
-                throw new Error(
-                  `TikTok API returned non-JSON response: ${errorText.substring(
-                    0,
-                    100,
-                  )}`,
-                );
-              }
-
-              if (tiktokRes.ok) {
-                if (tiktokData.status === "processing" && tiktokData.publishId) {
-                  setUploadStatus("success");
-                  setErrorMessages([
-                    "TikTok: Your video is being processed. Check your TikTok app notifications to continue editing and publishing.",
-                  ]);
-
-                  const checkStatus = async () => {
-                    try {
-                      const statusRes = await fetch("/api/tiktok/check-status", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          publishId: tiktokData.publishId,
-                          accessToken: tiktokData.accessToken,
-                          mediaUrl: compressData.compressedUrl,
-                          originalMediaUrl: blobResult.url,
-                        }),
-                      });
-
-                      let statusData;
-                      try {
-                        statusData = await statusRes.json();
-                      } catch (jsonError) {
-                        console.error(
-                          "Failed to parse status response as JSON:",
-                          jsonError,
-                        );
-                        throw new Error(
-                          "Status check returned invalid JSON response",
-                        );
+                  if (statusRes.ok) {
+                    if (statusData.status === "success") {
+                      console.log(
+                        "TikTok upload complete, publishId:",
+                        statusData.publishId,
+                      );
+                      setErrorMessages([
+                        `TikTok: ${statusData.message}${statusData.note ? `\n${statusData.note}` : ""}`,
+                      ]);
+                      return;
+                    } else if (statusData.status === "processing") {
+                      console.log("TikTok upload still processing...");
+                      if (
+                        statusData.note &&
+                        statusData.note !== tiktokData.note
+                      ) {
+                        setErrorMessages([
+                          `TikTok: ${statusData.message}${statusData.note ? `\n${statusData.note}` : ""}`,
+                        ]);
                       }
-
-                      if (statusRes.ok) {
-                        if (statusData.status === "success") {
-                          console.log(
-                            "TikTok upload complete, publishId:",
-                            statusData.publishId,
-                          );
-
-                          setErrorMessages([
-                            `TikTok: ${statusData.message}${statusData.note ? `\n${statusData.note}` : ""
-                            }`,
-                          ]);
-
-                          return;
-                        } else if (statusData.status === "processing") {
-                          console.log("TikTok upload still processing...");
-
-                          if (
-                            statusData.note &&
-                            statusData.note !== tiktokData.note
-                          ) {
-                            setErrorMessages([
-                              `TikTok: ${statusData.message}${statusData.note ? `\n${statusData.note}` : ""
-                              }`,
-                            ]);
-                          }
-
-                          setTimeout(checkStatus, 2000);
-                        } else if (statusData.status === "error") {
-                          console.error("TikTok processing error:", statusData);
-                          setUploadStatus("error");
-                          setErrorMessages([
-                            `TikTok: ${statusData.error}${statusData.details ? ` - ${statusData.details}` : ""
-                            }`,
-                          ]);
-                        }
-                      } else {
-                        console.error("Error checking TikTok status:", statusData);
-                      }
-                    } catch (error) {
-                      console.error("Error in TikTok status check:", error);
+                      setTimeout(checkStatus, 2000);
+                    } else if (statusData.status === "error") {
+                      console.error("TikTok processing error:", statusData);
                       setUploadStatus("error");
                       setErrorMessages([
-                        `TikTok status check failed: ${error instanceof Error ? error.message : "Unknown error"
-                        }`,
+                        `TikTok: ${statusData.error}${statusData.details ? ` - ${statusData.details}` : ""}`,
                       ]);
                     }
-                  };
-
-                  checkStatus();
-
-                  uploadSuccess = true;
-                } else if (tiktokData.publishId) {
-                  uploadSuccess = true;
-
-                  if (tiktokData.message) {
-                    setErrorMessages([`TikTok: ${tiktokData.message}`]);
+                  } else {
+                    console.error("Error checking TikTok status:", statusData);
                   }
+                } catch (error) {
+                  console.error("Error in TikTok status check:", error);
+                  setUploadStatus("error");
+                  setErrorMessages([
+                    `TikTok status check failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+                  ]);
                 }
-              } else {
-                console.error("TikTok upload failed:", tiktokData);
-                let errorMessage = `TikTok: ${tiktokData.error || "Unknown error"}`;
+              };
 
-                if (tiktokData.errorType === "token_expired") {
-                  errorMessage = `TikTok: Your TikTok authorization has expired. Please disconnect and reconnect your account.`;
-                } else if (tiktokData.details) {
-                  errorMessage += ` - ${tiktokData.details}`;
-                  console.error("TikTok error details:", tiktokData.details);
-                }
-
-                uploadErrors.push(errorMessage);
+              // Start the polling process
+              checkStatus();
+              uploadSuccess = true;
+            } else if (tiktokData.publishId) {
+              uploadSuccess = true;
+              if (tiktokData.message) {
+                setErrorMessages([`TikTok: ${tiktokData.message}`]);
               }
-            } else {
-              throw new Error("Compression completed but no URL was returned");
             }
           } else {
-            const tiktokRes = await fetch("/api/tiktok/upload", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                mediaUrl: blobResult.url,
-                caption: description || title,
-              }),
-            });
+            console.error("TikTok upload failed:", tiktokData);
+            let errorMessage = `TikTok: ${tiktokData.error || "Unknown error"}`;
 
-            let tiktokData;
-            try {
-              tiktokData = await tiktokRes.json();
-            } catch (jsonError) {
-              console.error(
-                "Failed to parse TikTok response as JSON:",
-                jsonError,
-              );
-              const errorText = await tiktokRes.text();
-              throw new Error(
-                `TikTok API returned non-JSON response: ${errorText.substring(
-                  0,
-                  100,
-                )}`,
-              );
+            if (tiktokData.errorType === "token_expired") {
+              errorMessage = `TikTok: Your TikTok authorization has expired. Please disconnect and reconnect your account.`;
+            } else if (tiktokData.details) {
+              errorMessage += ` - ${tiktokData.details}`;
+              console.error("TikTok error details:", tiktokData.details);
             }
 
-            if (tiktokRes.ok) {
-              if (tiktokData.status === "processing" && tiktokData.publishId) {
-                setUploadStatus("success");
-                setErrorMessages([
-                  "TikTok: Your video is being processed. Check your TikTok app notifications to continue editing and publishing.",
-                ]);
-
-                const checkStatus = async () => {
-                  try {
-                    const statusRes = await fetch("/api/tiktok/check-status", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        publishId: tiktokData.publishId,
-                        accessToken: tiktokData.accessToken,
-                        mediaUrl: blobResult.url,
-                      }),
-                    });
-
-                    let statusData;
-                    try {
-                      statusData = await statusRes.json();
-                    } catch (jsonError) {
-                      console.error(
-                        "Failed to parse status response as JSON:",
-                        jsonError,
-                      );
-                      throw new Error(
-                        "Status check returned invalid JSON response",
-                      );
-                    }
-
-                    if (statusRes.ok) {
-                      if (statusData.status === "success") {
-                        console.log(
-                          "TikTok upload complete, publishId:",
-                          statusData.publishId,
-                        );
-
-                        setErrorMessages([
-                          `TikTok: ${statusData.message}${statusData.note ? `\n${statusData.note}` : ""
-                          }`,
-                        ]);
-
-                        return;
-                      } else if (statusData.status === "processing") {
-                        console.log("TikTok upload still processing...");
-
-                        if (
-                          statusData.note &&
-                          statusData.note !== tiktokData.note
-                        ) {
-                          setErrorMessages([
-                            `TikTok: ${statusData.message}${statusData.note ? `\n${statusData.note}` : ""
-                            }`,
-                          ]);
-                        }
-
-                        setTimeout(checkStatus, 2000);
-                      } else if (statusData.status === "error") {
-                        console.error("TikTok processing error:", statusData);
-                        setUploadStatus("error");
-                        setErrorMessages([
-                          `TikTok: ${statusData.error}${statusData.details ? ` - ${statusData.details}` : ""
-                          }`,
-                        ]);
-                      }
-                    } else {
-                      console.error("Error checking TikTok status:", statusData);
-                    }
-                  } catch (error) {
-                    console.error("Error in TikTok status check:", error);
-                    setUploadStatus("error");
-                    setErrorMessages([
-                      `TikTok status check failed: ${error instanceof Error ? error.message : "Unknown error"
-                      }`,
-                    ]);
-                  }
-                };
-
-                checkStatus();
-
-                uploadSuccess = true;
-              } else if (tiktokData.publishId) {
-                uploadSuccess = true;
-
-                if (tiktokData.message) {
-                  setErrorMessages([`TikTok: ${tiktokData.message}`]);
-                }
-              }
-            } else {
-              console.error("TikTok upload failed:", tiktokData);
-              let errorMessage = `TikTok: ${tiktokData.error || "Unknown error"}`;
-
-              if (tiktokData.errorType === "token_expired") {
-                errorMessage = `TikTok: Your TikTok authorization has expired. Please disconnect and reconnect your account.`;
-              } else if (tiktokData.details) {
-                errorMessage += ` - ${tiktokData.details}`;
-                console.error("TikTok error details:", tiktokData.details);
-              }
-
-              uploadErrors.push(errorMessage);
-            }
+            uploadErrors.push(errorMessage);
           }
         } catch (error) {
           console.error("Error uploading to TikTok:", error);
           uploadErrors.push(
-            `TikTok: ${error instanceof Error ? error.message : "Unknown error"
-            }`,
+            `TikTok: ${error instanceof Error ? error.message : "Unknown error"}`,
           );
         } finally {
           setIsCompressing(false);
         }
       }
 
+      // Set upload status based on results
       if (uploadSuccess) {
         setUploadStatus("success");
         setFile(null);
@@ -572,8 +421,7 @@ export default function UploadForm({
       console.error("Upload failed", err);
       setUploadStatus("error");
       setErrorMessages([
-        `General error: ${err instanceof Error ? err.message : "Unknown error"
-        }`,
+        `General error: ${err instanceof Error ? err.message : "Unknown error"}`,
       ]);
       setIsCompressing(false);
     }
@@ -622,56 +470,56 @@ export default function UploadForm({
                 msg.includes("TikTok token expired") ||
                 msg.includes("TikTok: Your TikTok authorization has expired"),
             ) && (
-                <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md">
-                  <h4 className="font-medium text-amber-800 mb-2">
-                    TikTok Account Reconnection Required
-                  </h4>
-                  <p className="text-amber-700 mb-2">
-                    Your TikTok authorization has expired. Please follow these
-                    steps to reconnect:
-                  </p>
-                  <ol className="list-decimal list-inside text-amber-700 space-y-1">
-                    <li>Go to the TikTok tab on this page</li>
-                    <li>Toggle the switch to disconnect your account</li>
-                    <li>
-                      Toggle the switch again to reconnect your TikTok account
-                    </li>
-                    <li>Try uploading again after reconnecting</li>
-                  </ol>
-                  <p className="text-amber-700 mt-2 text-sm">
-                    Note: TikTok access tokens periodically expire and require
-                    reconnection.
-                  </p>
-                </div>
-              )}
+              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md">
+                <h4 className="font-medium text-amber-800 mb-2">
+                  TikTok Account Reconnection Required
+                </h4>
+                <p className="text-amber-700 mb-2">
+                  Your TikTok authorization has expired. Please follow these
+                  steps to reconnect:
+                </p>
+                <ol className="list-decimal list-inside text-amber-700 space-y-1">
+                  <li>Go to the TikTok tab on this page</li>
+                  <li>Toggle the switch to disconnect your account</li>
+                  <li>
+                    Toggle the switch again to reconnect your TikTok account
+                  </li>
+                  <li>Try uploading again after reconnecting</li>
+                </ol>
+                <p className="text-amber-700 mt-2 text-sm">
+                  Note: TikTok access tokens periodically expire and require
+                  reconnection.
+                </p>
+              </div>
+            )}
 
             {errorMessages.some(
               (msg) =>
                 msg.includes("Instagram Professional Account Required") ||
                 msg.includes("Instagram Business Account Required"),
             ) && (
-                <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md">
-                  <h4 className="font-medium text-amber-800 mb-2">
-                    Instagram Professional Account Required
-                  </h4>
-                  <p className="text-amber-700 mb-2">
-                    To publish videos to Instagram, you need:
-                  </p>
-                  <ol className="list-decimal list-inside text-amber-700">
-                    <li>
-                      An Instagram Professional account (Business or Creator)
-                    </li>
-                  </ol>
-                  <a
-                    href="https://help.instagram.com/502981923235522"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline mt-2 inline-block"
-                  >
-                    Learn how to convert to a Professional account
-                  </a>
-                </div>
-              )}
+              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md">
+                <h4 className="font-medium text-amber-800 mb-2">
+                  Instagram Professional Account Required
+                </h4>
+                <p className="text-amber-700 mb-2">
+                  To publish videos to Instagram, you need:
+                </p>
+                <ol className="list-decimal list-inside text-amber-700">
+                  <li>
+                    An Instagram Professional account (Business or Creator)
+                  </li>
+                </ol>
+                <a
+                  href="https://help.instagram.com/502981923235522"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:underline mt-2 inline-block"
+                >
+                  Learn how to convert to a Professional account
+                </a>
+              </div>
+            )}
           </AlertDescription>
         </Alert>
       )}
@@ -689,11 +537,12 @@ export default function UploadForm({
                       <p className="font-medium">{file.name}</p>
                       <p className="text-sm text-gray-500">
                         {(file.size / (1024 * 1024)).toFixed(2)} MB
-                        {file.size > 80 * 1024 * 1024 && activeTab === "tiktok" && (
-                          <span className="block text-amber-600 mt-1">
-                            This file will be compressed for TikTok upload
-                          </span>
-                        )}
+                        {file.size > 80 * 1024 * 1024 &&
+                          activeTab === "tiktok" && (
+                            <span className="block text-amber-600 mt-1">
+                              Large file will be processed directly by TikTok
+                            </span>
+                          )}
                       </p>
                       <Button
                         type="button"
@@ -847,8 +696,9 @@ export default function UploadForm({
                   </div>
                   <div className="flex items-center gap-2">
                     <span
-                      className={`text-sm font-medium ${instagramConnected ? "text-green-600" : "text-red-600"
-                        }`}
+                      className={`text-sm font-medium ${
+                        instagramConnected ? "text-green-600" : "text-red-600"
+                      }`}
                     >
                       {instagramConnected ? "Connected" : "Not Connected"}
                     </span>
@@ -930,8 +780,9 @@ export default function UploadForm({
                   </div>
                   <div className="flex items-center gap-2">
                     <span
-                      className={`text-sm font-medium ${tiktokConnected ? "text-green-600" : "text-red-600"
-                        }`}
+                      className={`text-sm font-medium ${
+                        tiktokConnected ? "text-green-600" : "text-red-600"
+                      }`}
                     >
                       {tiktokConnected ? "Connected" : "Not Connected"}
                     </span>
@@ -983,14 +834,16 @@ export default function UploadForm({
                     {isUploading && activeTab === "tiktok" ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        {isCompressing ? "Compressing & Uploading..." : "Uploading to TikTok..."}
+                        {isCompressing
+                          ? "Processing & Uploading..."
+                          : "Uploading to TikTok..."}
                       </>
                     ) : (
                       <>
                         <UploadIcon className="mr-2 h-4 w-4" />
                         Upload to TikTok
                         {file && file.size > 80 * 1024 * 1024 && (
-                          <span className="ml-1">(with compression)</span>
+                          <span className="ml-1">(Large File)</span>
                         )}
                       </>
                     )}

@@ -19,7 +19,7 @@ export async function POST(request: Request) {
       console.error("Missing required fields");
       return NextResponse.json(
         { error: "Missing required fields" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
           },
           body: statusPayload,
           signal: controller.signal,
-        }
+        },
       );
       clearTimeout(timeoutId);
 
@@ -76,7 +76,7 @@ export async function POST(request: Request) {
               statusResponse.status
             }: ${responseText.substring(0, 200)}`,
           },
-          { status: 500 }
+          { status: 500 },
         );
       }
 
@@ -104,7 +104,7 @@ export async function POST(request: Request) {
               "Failed to parse status check response as JSON. Raw response: " +
               responseText.substring(0, 100),
           },
-          { status: 500 }
+          { status: 500 },
         );
       }
 
@@ -198,7 +198,7 @@ export async function POST(request: Request) {
             error: "TikTok status check timeout",
             details: "The status check took too long and was aborted.",
           },
-          { status: 504 }
+          { status: 504 },
         );
       }
 
