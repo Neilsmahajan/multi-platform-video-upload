@@ -11,9 +11,9 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
 // TikTok video upload limits
-const MAX_RECOMMENDED_SIZE = 50 * 1024 * 1024; // 50MB recommended max
-const MAX_ALLOWED_SIZE = 100 * 1024 * 1024; // 100MB hard limit
-const MAX_CHUNKS_ALLOWED = 10; // TikTok seems to limit chunks
+// const MAX_RECOMMENDED_SIZE = 50 * 1024 * 1024; // 50MB recommended max
+// const MAX_ALLOWED_SIZE = 100 * 1024 * 1024; // 100MB hard limit
+// const MAX_CHUNKS_ALLOWED = 10; // TikTok seems to limit chunks
 
 export async function POST(request: Request) {
   try {
