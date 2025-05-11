@@ -85,9 +85,24 @@ export async function POST(request: Request) {
       const videoSize = videoBuffer.byteLength;
       console.log("Video size:", videoSize, "bytes");
 
-      // Define a reasonable chunk size (4MB)
-      const MAX_CHUNK_SIZE = 4 * 1024 * 1024; // 4MB in bytes
-      const chunkSize = Math.min(videoSize, MAX_CHUNK_SIZE);
+      // Define chunk size based on TikTok's requirements
+      // Adjust chunk size based on video size
+      let chunkSize;
+      if (videoSize <= 10000000) {
+        // Less than 10MB
+        // Small videos can be uploaded in one chunk
+        chunkSize = videoSize;
+      } else if (videoSize <= 100000000) {
+        // 10MB to 100MB
+        // Medium videos use 10MB chunks (TikTok recommended size)
+        chunkSize = 10000000; // 10MB
+      } else {
+        // Larger videos use 20MB chunks
+        chunkSize = 20000000; // 20MB
+      }
+
+      // Ensure we have at least one chunk and the chunk size is valid
+      chunkSize = Math.min(videoSize, chunkSize);
       const totalChunks = Math.ceil(videoSize / chunkSize);
 
       console.log(
@@ -429,12 +444,12 @@ export async function POST(request: Request) {
               }/${totalChunks}, bytes ${start}-${end}/${videoSize}`,
             );
 
-            // Set a timeout for this chunk upload
+            // Set a timeout for this chunk upload - use longer timeout for larger chunks
             const chunkController = new AbortController();
             const chunkTimeoutId = setTimeout(
               () => chunkController.abort(),
-              30000,
-            ); // 30 seconds per chunk
+              60000, // 60 seconds per chunk for larger chunk sizes
+            );
 
             try {
               const chunkResponse = await fetch(uploadUrl, {
