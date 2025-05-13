@@ -35,7 +35,8 @@
     "tailwindcss-animate": "^1.0.7",
     "@ffmpeg/ffmpeg": "^0.12.7",
     "@ffmpeg/core-st": "^0.11.1",
-    "@ffmpeg/util": "^0.12.1"
+    "@ffmpeg/util": "^0.12.1",
+    "fluent-ffmpeg": "^2.1.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
@@ -47,6 +48,7 @@
     "postcss": "^8",
     "prisma": "^6.5.0",
     "tailwindcss": "^3.4.1",
-    "typescript": "^5"
+    "typescript": "^5",
+    "@types/fluent-ffmpeg": "^2.1.24"
   }
 }
