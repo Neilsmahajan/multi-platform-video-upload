@@ -1,11 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { put } from "@vercel/blob";
-import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { toBlobURL } from "@ffmpeg/util";
-
-// Configure for longer processing time on serverless
-export const maxDuration = 60;
+import { del } from "@vercel/blob";
 
 export async function POST(request: Request) {
   try {
@@ -16,182 +11,212 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Parse request body
-    const {
-      sourceUrl,
-      originalFileName,
-      targetSizeMB = 25,
-    } = await request.json();
-    if (!sourceUrl || !originalFileName) {
+    // Parse JSON body; expects publishId, accessToken, mediaUrl (and now originalMediaUrl for compressed videos)
+    const { publishId, accessToken, mediaUrl, originalMediaUrl } =
+      await request.json();
+
+    if (!publishId || !accessToken) {
+      console.error("Missing required fields");
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
       );
     }
 
-    console.log(`Starting video compression for ${originalFileName}`);
-    console.log(`Source URL: ${sourceUrl}`);
-    console.log(`Target size: ${targetSizeMB}MB`);
-
-    // Create output filename
-    const outputFileName =
-      originalFileName.substring(0, originalFileName.lastIndexOf(".")) +
-      "_compressed.mp4";
-
-    console.log(`Output filename: ${outputFileName}`);
+    // Check upload status
+    console.log(`Checking status for TikTok upload ${publishId}`);
 
     try {
-      // Initialize FFmpeg
-      const ffmpeg = new FFmpeg();
-      console.log("Loading FFmpeg...");
+      // Use a timeout for the status check request
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
 
-      // Load FFmpeg WebAssembly modules - fix the URLs
-      await ffmpeg.load({
-        coreURL: await toBlobURL(
-          "https://unpkg.com/@ffmpeg/core@0.12.6/dist/ffmpeg-core.wasm",
-          "application/wasm"
-        ),
-        wasmURL: await toBlobURL(
-          "https://unpkg.com/@ffmpeg/core-mt@0.12.6/dist/ffmpeg-core.wasm",
-          "application/wasm"
-        ),
+      const statusPayload = JSON.stringify({
+        publish_id: publishId,
       });
 
-      console.log("FFmpeg loaded");
-
-      // Fetch the source video
-      console.log("Fetching source video...");
-      const sourceData = await fetch(sourceUrl);
-      const sourceBuffer = await sourceData.arrayBuffer();
-
-      // Write the input file to FFmpeg's virtual file system
-      console.log("Writing input file to FFmpeg filesystem...");
-      ffmpeg.writeFile("input.mp4", new Uint8Array(sourceBuffer));
-
-      // Determine compression settings based on file size
-      const sourceSize = sourceBuffer.byteLength;
-      const sourceSizeMB = sourceSize / (1024 * 1024);
-      console.log(`Source video size: ${sourceSizeMB.toFixed(2)} MB`);
-
-      // Aim for target size (default 25MB which is good for TikTok)
-      const compressionRatio = Math.min(targetSizeMB / sourceSizeMB, 0.9);
-      // Determine bitrate (assuming 3 minute video to be safe)
-      const durationSeconds = 180;
-      const videoBitrate = Math.floor(
-        (targetSizeMB * 8 * 1024) / durationSeconds
+      const statusResponse = await fetch(
+        "https://open.tiktokapis.com/v2/post/publish/status/fetch/",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json; charset=UTF-8",
+            "Content-Length": statusPayload.length.toString(),
+          },
+          body: statusPayload,
+          signal: controller.signal,
+        }
       );
-      const audioBitrate = "128k";
+      clearTimeout(timeoutId);
 
-      console.log(`Target size: ${targetSizeMB.toFixed(2)} MB`);
-      console.log(`Compression ratio: ${compressionRatio.toFixed(2)}`);
-      console.log(`Calculated video bitrate: ${videoBitrate}k`);
+      // Get the full response text first
+      const responseText = await statusResponse.text();
+      const contentType = statusResponse.headers.get("content-type");
 
-      // Run FFmpeg command with aggressive compression
-      console.log("Starting compression...");
+      // Log the status response for debugging
+      console.log("TikTok status check response:", {
+        status: statusResponse.status,
+        contentType,
+        responsePreview: responseText.substring(0, 200),
+      });
 
-      // Different command for .mov vs other formats
-      if (originalFileName.toLowerCase().endsWith(".mov")) {
-        // More aggressive settings for .mov files
-        await ffmpeg.exec([
-          "-i",
-          "input.mp4",
-          "-c:v",
-          "libx264",
-          "-preset",
-          "ultrafast", // Faster but less efficient compression
-          "-crf",
-          "28", // Higher CRF = more compression
-          "-vf",
-          "scale=-2:720", // Resize to 720p height, maintain aspect ratio
-          "-r",
-          "30", // 30fps
-          "-c:a",
-          "aac",
-          "-b:a",
-          audioBitrate,
-          "-movflags",
-          "+faststart",
-          "output.mp4",
-        ]);
-      } else {
-        // For mp4 and other formats
-        await ffmpeg.exec([
-          "-i",
-          "input.mp4",
-          "-c:v",
-          "libx264",
-          "-preset",
-          "fast",
-          "-b:v",
-          `${videoBitrate}k`,
-          "-maxrate",
-          `${videoBitrate * 1.5}k`,
-          "-bufsize",
-          `${videoBitrate * 2}k`,
-          "-vf",
-          "scale=-2:720", // Resize to 720p height
-          "-c:a",
-          "aac",
-          "-b:a",
-          audioBitrate,
-          "-movflags",
-          "+faststart",
-          "output.mp4",
-        ]);
+      if (!statusResponse.ok) {
+        console.error("Failed to check TikTok upload status:", {
+          status: statusResponse.status,
+          contentType,
+          response: responseText.substring(0, 500),
+        });
+
+        return NextResponse.json(
+          {
+            status: "error",
+            error: "Failed to check TikTok status",
+            details: `Status check failed with ${
+              statusResponse.status
+            }: ${responseText.substring(0, 200)}`,
+          },
+          { status: 500 }
+        );
       }
 
-      console.log("Compression completed, reading output file...");
+      // Try to parse as JSON
+      let statusData;
+      try {
+        // Only attempt to parse if the response is not empty
+        if (responseText && responseText.trim()) {
+          statusData = JSON.parse(responseText);
+          console.log("TikTok upload status data:", statusData);
+        } else {
+          throw new Error("Empty response received");
+        }
+      } catch (parseError) {
+        console.error("Failed to parse TikTok status response as JSON:", {
+          error: parseError,
+          responseText: responseText.substring(0, 500),
+        });
 
-      // Read the compressed file
-      const compressedData = await ffmpeg.readFile("output.mp4");
-      console.log("Compressed file read, preparing for upload...");
+        return NextResponse.json(
+          {
+            status: "error",
+            error: "Invalid response from TikTok",
+            details:
+              "Failed to parse status check response as JSON. Raw response: " +
+              responseText.substring(0, 100),
+          },
+          { status: 500 }
+        );
+      }
 
-      // Convert the compressed data to a Blob
-      const compressedBlob = new Blob([compressedData], { type: "video/mp4" });
+      // Process the status data
+      if (statusData.data) {
+        if (statusData.data.status === "PUBLISH_FAILED") {
+          return NextResponse.json({
+            status: "error",
+            error: "TikTok publishing failed",
+            details: JSON.stringify(statusData.data),
+          });
+        } else if (
+          statusData.data.status === "PUBLISH_SUCCESSFUL" ||
+          statusData.data.status === "PUBLISHED" ||
+          statusData.data.status === "UPLOAD_SUCCESSFUL"
+        ) {
+          // Delete the blob files after successful upload
+          if (mediaUrl) {
+            try {
+              console.log("Deleting compressed blob after successful upload");
+              await del(mediaUrl);
+              console.log("Compressed blob deleted successfully");
+            } catch (delError) {
+              console.error("Error deleting compressed blob:", delError);
+              // Continue even if blob deletion fails
+            }
+          }
 
-      // Upload the compressed file to Vercel Blob
-      console.log("Uploading compressed file to Vercel Blob...");
-      const uploadResult = await put(outputFileName, compressedBlob, {
-        access: "public",
-        token: process.env.BLOB_READ_WRITE_TOKEN,
-      });
+          // Also delete the original blob if it exists and is different from mediaUrl
+          if (originalMediaUrl && originalMediaUrl !== mediaUrl) {
+            try {
+              console.log("Deleting original blob after successful upload");
+              await del(originalMediaUrl);
+              console.log("Original blob deleted successfully");
+            } catch (delError) {
+              console.error("Error deleting original blob:", delError);
+              // Continue even if blob deletion fails
+            }
+          }
 
-      console.log("Compressed file uploaded, URL:", uploadResult.url);
-      console.log(
-        `Original size: ${sourceSizeMB.toFixed(2)} MB, Compressed size: ${(
-          compressedBlob.size /
-          (1024 * 1024)
-        ).toFixed(2)} MB`
-      );
+          let itemId = "";
+          if (statusData.data.item_id) {
+            itemId = statusData.data.item_id;
+          }
 
-      // Return the URL of the compressed file
+          return NextResponse.json({
+            status: "success",
+            publishId: publishId,
+            itemId: itemId,
+            processingStatus: statusData.data.status,
+            message: "Video successfully uploaded to your TikTok inbox!",
+            note: "Check your TikTok app notifications to edit and publish your video.",
+          });
+        } else if (statusData.data.status === "PROCESSING_UPLOAD") {
+          // This is a common status during processing
+          return NextResponse.json({
+            status: "processing",
+            publishId: publishId,
+            processingStatus: statusData.data.status,
+            message: "TikTok is still processing your video upload.",
+            note: "You'll receive a notification in the TikTok app when it's ready to edit.",
+          });
+        } else {
+          // Still processing with other status
+          return NextResponse.json({
+            status: "processing",
+            publishId: publishId,
+            processingStatus: statusData.data.status || "PROCESSING",
+            message: "Video is still being processed by TikTok.",
+            note: "Check your TikTok app notifications to complete the process.",
+          });
+        }
+      } else {
+        // No status data
+        return NextResponse.json({
+          status: "processing",
+          publishId: publishId,
+          message:
+            "Status check did not return definitive status. Still processing.",
+          note: "Please check your TikTok profile for your video.",
+        });
+      }
+    } catch (statusError) {
+      console.error("Error checking TikTok upload status:", statusError);
+
+      // Check if this is an AbortError (timeout)
+      if (statusError instanceof Error && statusError.name === "AbortError") {
+        return NextResponse.json(
+          {
+            status: "error",
+            error: "TikTok status check timeout",
+            details: "The status check took too long and was aborted.",
+          },
+          { status: 504 }
+        );
+      }
+
       return NextResponse.json({
-        compressedUrl: uploadResult.url,
-        originalSize: sourceSize,
-        compressedSize: compressedBlob.size,
-        compressionRatio: sourceSize / compressedBlob.size,
+        status: "error",
+        error: "Failed to check TikTok status",
+        details:
+          statusError instanceof Error
+            ? statusError.message
+            : "Unknown error during status check",
       });
-    } catch (ffmpegError) {
-      console.error("FFmpeg processing error:", ffmpegError);
-      return NextResponse.json(
-        {
-          error: "Video compression failed",
-          details:
-            ffmpegError instanceof Error
-              ? ffmpegError.message
-              : "Unknown FFmpeg error",
-        },
-        { status: 500 }
-      );
     }
-  } catch (error) {
-    console.error("Unhandled error during video compression:", error);
-    return NextResponse.json(
-      {
-        error: "Video compression failed",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    console.error("Unhandled error during TikTok status check:", error);
+    return NextResponse.json({
+      status: "error",
+      error: "Status check failed",
+      details: error instanceof Error ? error.message : "Unknown error",
+    });
   }
 }
