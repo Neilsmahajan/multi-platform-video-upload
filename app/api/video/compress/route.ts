@@ -87,108 +87,115 @@ export async function POST(request: Request) {
       console.log(`Target size: ${targetSizeMB.toFixed(2)} MB`);
       console.log(`Calculated video bitrate: ${videoBitrate}k`);
 
-      // Create a promise for the FFmpeg process
-      await new Promise<void>((resolve, reject) => {
-        // Different command for .mov vs other formats
-        const command = ffmpeg(inputPath);
+      // Check if ffmpeg is available
+      try {
+        // Use more aggressive settings for faster processing and smaller file size
+        // Create a promise for the FFmpeg process
+        await new Promise<void>((resolve, reject) => {
+          // Different command for .mov vs other formats
+          const command = ffmpeg(inputPath);
 
-        if (originalFileName.toLowerCase().endsWith(".mov")) {
-          // More aggressive settings for .mov files
-          command.outputOptions([
-            "-c:v",
-            "libx264",
-            "-preset",
-            "ultrafast", // Faster but less efficient compression
-            "-crf",
-            "28", // Higher CRF = more compression
-            "-vf",
-            "scale=-2:720", // Resize to 720p height, maintain aspect ratio
-            "-r",
-            "30", // 30fps
-            "-c:a",
-            "aac",
-            "-b:a",
-            audioBitrate,
-            "-movflags",
-            "+faststart",
-          ]);
-        } else {
-          // For mp4 and other formats
-          command.outputOptions([
-            "-c:v",
-            "libx264",
-            "-preset",
-            "ultrafast", // Use ultrafast for serverless environment
-            "-b:v",
-            `${videoBitrate}k`,
-            "-maxrate",
-            `${videoBitrate * 1.5}k`,
-            "-bufsize",
-            `${videoBitrate * 2}k`,
-            "-vf",
-            "scale=-2:720", // Resize to 720p height
-            "-c:a",
-            "aac",
-            "-b:a",
-            audioBitrate,
-            "-movflags",
-            "+faststart",
-          ]);
+          if (originalFileName.toLowerCase().endsWith(".mov")) {
+            // More aggressive settings for .mov files
+            command.outputOptions([
+              "-c:v",
+              "libx264",
+              "-preset",
+              "ultrafast", // Faster but less efficient compression
+              "-crf",
+              "28", // Higher CRF = more compression
+              "-vf",
+              "scale=-2:720", // Resize to 720p height, maintain aspect ratio
+              "-r",
+              "30", // 30fps
+              "-c:a",
+              "aac",
+              "-b:a",
+              audioBitrate,
+              "-movflags",
+              "+faststart",
+            ]);
+          } else {
+            // For mp4 and other formats
+            command.outputOptions([
+              "-c:v",
+              "libx264",
+              "-preset",
+              "ultrafast", // Use ultrafast for serverless environment
+              "-b:v",
+              `${videoBitrate}k`,
+              "-maxrate",
+              `${videoBitrate * 1.5}k`,
+              "-bufsize",
+              `${videoBitrate * 2}k`,
+              "-vf",
+              "scale=-2:720", // Resize to 720p height
+              "-c:a",
+              "aac",
+              "-b:a",
+              audioBitrate,
+              "-movflags",
+              "+faststart",
+            ]);
+          }
+
+          command
+            .on("start", (commandLine) => {
+              console.log("FFmpeg process started:", commandLine);
+            })
+            .on("error", (err, stdout, stderr) => {
+              console.error("FFmpeg error:", err.message);
+              console.error("FFmpeg stderr:", stderr);
+              reject(err);
+            })
+            .on("end", () => {
+              console.log("FFmpeg processing completed");
+              resolve();
+            })
+            .save(outputPath);
+        });
+
+        // Check the size of the compressed file
+        const compressedStats = fs.statSync(outputPath);
+        const compressedSize = compressedStats.size;
+        console.log(
+          `Original size: ${sourceSizeMB.toFixed(2)} MB, Compressed size: ${(
+            compressedSize /
+            (1024 * 1024)
+          ).toFixed(2)} MB`,
+        );
+
+        // Upload the compressed file to Vercel Blob
+        console.log("Uploading compressed file to Vercel Blob...");
+        const fileBuffer = fs.readFileSync(outputPath);
+        const compressedBlob = new Blob([fileBuffer], { type: "video/mp4" });
+
+        const uploadResult = await put(outputFileName, compressedBlob, {
+          access: "public",
+          token: process.env.BLOB_READ_WRITE_TOKEN,
+        });
+
+        console.log("Compressed file uploaded, URL:", uploadResult.url);
+
+        // Clean up temp files
+        try {
+          fs.unlinkSync(inputPath);
+          fs.unlinkSync(outputPath);
+        } catch (cleanupError) {
+          console.error("Error cleaning up temp files:", cleanupError);
         }
 
-        command
-          .on("start", (commandLine) => {
-            console.log("FFmpeg process started:", commandLine);
-          })
-          .on("error", (err, stdout, stderr) => {
-            console.error("FFmpeg error:", err.message);
-            console.error("FFmpeg stderr:", stderr);
-            reject(err);
-          })
-          .on("end", () => {
-            console.log("FFmpeg processing completed");
-            resolve();
-          })
-          .save(outputPath);
-      });
-
-      // Check the size of the compressed file
-      const compressedStats = fs.statSync(outputPath);
-      const compressedSize = compressedStats.size;
-      console.log(
-        `Original size: ${sourceSizeMB.toFixed(2)} MB, Compressed size: ${(
-          compressedSize /
-          (1024 * 1024)
-        ).toFixed(2)} MB`,
-      );
-
-      // Upload the compressed file to Vercel Blob
-      console.log("Uploading compressed file to Vercel Blob...");
-      const fileBuffer = fs.readFileSync(outputPath);
-      const compressedBlob = new Blob([fileBuffer], { type: "video/mp4" });
-
-      const uploadResult = await put(outputFileName, compressedBlob, {
-        access: "public",
-        token: process.env.BLOB_READ_WRITE_TOKEN,
-      });
-
-      console.log("Compressed file uploaded, URL:", uploadResult.url);
-
-      // Clean up temp files
-      try {
-        fs.unlinkSync(inputPath);
-        fs.unlinkSync(outputPath);
-      } catch (cleanupError) {
-        console.error("Error cleaning up temp files:", cleanupError);
+        // Return the URL of the compressed file
+        return NextResponse.json({
+          compressedUrl: uploadResult.url,
+          originalSize: sourceSize,
+          compressedSize: compressedSize,
+          compressionRatio: sourceSize / compressedSize,
+        });
+      } catch (ffmpegError) {
+        console.error("FFmpeg processing error:", ffmpegError);
+        throw ffmpegError;
       }
-
-      // Return the URL of the compressed file
-      return NextResponse.json({
-        compressedUrl: uploadResult.url,
-        originalSize: sourceSize,
-        compressedSize: compressedSize,
-        compressionRatio: sourceSize / compressedSize,
-      });
     } catch (ffmpegError) {
       console.error("FFmpeg processing error:", ffmpegError);
 
