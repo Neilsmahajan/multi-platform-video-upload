@@ -142,8 +142,6 @@ export async function POST(request: Request) {
       const finalMediaUrl = mediaUrl;
 
       // Calculate optimal chunk size based on file size
-      // For TikTok, use a single chunk when possible (for files under 50MB)
-      // For larger files, use valid chunking parameters
       let chunkSize;
       let totalChunkCount;
 
@@ -157,13 +155,21 @@ export async function POST(request: Request) {
           )}MB file`,
         );
       } else {
-        // For larger files, use proper chunking that meets TikTok's requirements
-        // Calculate a chunk size between MIN_CHUNK_SIZE and MAX_CHUNK_SIZE
-        chunkSize = Math.min(
-          MAX_CHUNK_SIZE,
-          Math.max(MIN_CHUNK_SIZE, Math.ceil(finalVideoSize / 10)),
-        );
-        totalChunkCount = Math.ceil(finalVideoSize / chunkSize);
+        // Fix: TikTok has specific requirements for chunk counts
+        // Use fixed chunk count of 5 for files larger than 50MB
+        totalChunkCount = 5; // TikTok seems to prefer fixed chunk counts
+        // Calculate chunk size to evenly distribute the file
+        chunkSize = Math.ceil(finalVideoSize / totalChunkCount);
+
+        // Ensure chunk size is at least MIN_CHUNK_SIZE
+        chunkSize = Math.max(chunkSize, MIN_CHUNK_SIZE);
+
+        // Recalculate chunk count if needed to ensure all chunks are valid size
+        if (chunkSize > MAX_CHUNK_SIZE) {
+          chunkSize = MAX_CHUNK_SIZE;
+          totalChunkCount = Math.ceil(finalVideoSize / chunkSize);
+        }
+
         console.log(
           `Using ${totalChunkCount} chunks of ${(
             chunkSize /

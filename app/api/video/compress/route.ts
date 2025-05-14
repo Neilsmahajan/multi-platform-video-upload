@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { put } from "@vercel/blob";
-import { spawn } from "child_process";
 import { createWriteStream } from "fs";
-import { mkdir, unlink, readFile } from "fs/promises";
+import { mkdir, unlink, readFile, writeFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { randomUUID } from "crypto";
-import { configureFFmpegPaths } from "../ffmpeg-config";
+import { FFmpeg } from "@ffmpeg/ffmpeg";
+import { toBlobURL } from "@ffmpeg/util";
 
 // Configure max file size - 100MB
 export const config = {
@@ -51,8 +51,8 @@ async function downloadFile(url: string, outputPath: string): Promise<void> {
   });
 }
 
-// Helper function to run FFmpeg compression
-async function compressVideo(
+// Helper function to compress video using WebAssembly FFmpeg
+async function compressWebAssemblyVideo(
   inputPath: string,
   outputPath: string,
   targetSizeMB: number,
@@ -61,100 +61,103 @@ async function compressVideo(
     `Compressing video from ${inputPath} to ${outputPath} with target size ${targetSizeMB}MB`,
   );
 
-  // Convert target size to kilobits (approximate bitrate calculation)
-  // Formula: bitrate = (target_size_in_kilobits) / (duration_in_seconds * 1.05)
-  // We initially set a default bitrate that will be refined after we analyze the video
-  let bitrate = "1000k"; // Default bitrate
+  const ffmpegLogs: string[] = [];
+  const ffmpeg = new FFmpeg();
+  const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.2/dist/umd";
 
-  // Configure ffmpeg paths for the environment
-  configureFFmpegPaths();
+  console.log("Loading FFmpeg WebAssembly...");
+  ffmpeg.on("log", ({ message }) => {
+    ffmpegLogs.push(message);
+  });
 
-  // First, get video duration and info
-  return new Promise((resolve, reject) => {
-    const ffprobeProcess = spawn("ffprobe", [
-      "-v",
-      "error",
-      "-show_entries",
-      "format=duration",
-      "-of",
-      "json",
-      inputPath,
+  await ffmpeg.load({
+    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
+    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
+  });
+
+  try {
+    console.log("FFmpeg WebAssembly loaded successfully");
+
+    // Read input file
+    const inputData = await readFile(inputPath);
+
+    // Write file to FFmpeg's virtual filesystem
+    console.log("Writing input file to FFmpeg's virtual filesystem");
+    await ffmpeg.writeFile("input.mp4", new Uint8Array(inputData));
+
+    // Parse logs to find video duration (hacky but works with WebAssembly FFmpeg)
+    const logs = ffmpegLogs.join("\n");
+    console.log("FFmpeg analysis logs:", logs);
+
+    // Extract duration from logs
+    const durationMatch = logs.match(
+      /Duration: (\d{2}):(\d{2}):(\d{2})\.(\d{2})/,
+    );
+    let durationInSeconds = 0;
+
+    if (durationMatch) {
+      const hours = parseInt(durationMatch[1]);
+      const minutes = parseInt(durationMatch[2]);
+      const seconds = parseInt(durationMatch[3]);
+      durationInSeconds = hours * 3600 + minutes * 60 + seconds;
+      console.log(`Video duration: ${durationInSeconds} seconds`);
+    } else {
+      console.log("Could not determine duration, using default bitrate");
+      durationInSeconds = 60; // Assume 1 minute if we can't determine duration
+    }
+
+    // Calculate target bitrate based on size
+    const targetSizeKb = targetSizeMB * 8 * 1024; // Convert MB to kilobits
+    const calculatedBitrate = Math.floor(
+      (targetSizeKb / durationInSeconds) * 0.9,
+    ); // 0.9 as safety factor
+    console.log(`Calculated bitrate: ${calculatedBitrate}k`);
+
+    // Perform video compression with calculated bitrate
+    console.log("Running compression with WebAssembly FFmpeg");
+    await ffmpeg.exec([
+      "-i",
+      "input.mp4",
+      "-c:v",
+      "libx264", // Use H.264 codec for video
+      "-preset",
+      "fast", // Compression preset
+      "-b:v",
+      `${calculatedBitrate}k`, // Video bitrate
+      "-maxrate",
+      `${calculatedBitrate * 1.5}k`, // Max bitrate
+      "-bufsize",
+      `${calculatedBitrate * 3}k`, // Buffer size
+      "-c:a",
+      "aac", // Use AAC codec for audio
+      "-b:a",
+      "128k", // Audio bitrate
+      "-movflags",
+      "+faststart", // Optimize for web streaming
+      "output.mp4", // Output filename in virtual filesystem
     ]);
 
-    let ffprobeOutput = "";
+    console.log("Video compression completed");
 
-    ffprobeProcess.stdout.on("data", (data) => {
-      ffprobeOutput += data.toString();
-    });
+    // Read the compressed video from FFmpeg's virtual filesystem
+    const outputData = await ffmpeg.readFile("output.mp4");
 
-    ffprobeProcess.on("close", (code) => {
-      if (code !== 0) {
-        return reject(new Error(`ffprobe process exited with code ${code}`));
-      }
+    // Write the compressed video to the output path
+    console.log("Writing compressed video to disk");
+    await writeFile(outputPath, outputData);
 
-      try {
-        const info = JSON.parse(ffprobeOutput);
-        const durationInSeconds = parseFloat(info.format.duration);
-        console.log(`Video duration: ${durationInSeconds} seconds`);
+    // Clean up virtual filesystem
+    await ffmpeg.deleteFile("input.mp4");
+    await ffmpeg.deleteFile("output.mp4");
 
-        // Calculate bitrate based on target size and duration
-        // Target size in kilobits / duration in seconds * safety factor
-        const targetSizeKb = targetSizeMB * 8 * 1024; // Convert MB to kilobits
-        const calculatedBitrate = Math.floor(
-          (targetSizeKb / durationInSeconds) * 0.9,
-        ); // 0.9 as safety factor
-        bitrate = `${calculatedBitrate}k`;
-        console.log(`Calculated bitrate: ${bitrate}`);
-
-        // Now run the actual compression
-        const ffmpegProcess = spawn("ffmpeg", [
-          "-i",
-          inputPath,
-          "-c:v",
-          "libx264", // Use H.264 codec for video
-          "-preset",
-          "fast", // Compression preset (slower = better compression)
-          "-b:v",
-          bitrate, // Video bitrate
-          "-maxrate",
-          `${calculatedBitrate * 1.5}k`, // Max bitrate (1.5x target for buffer)
-          "-bufsize",
-          `${calculatedBitrate * 3}k`, // Buffer size
-          "-c:a",
-          "aac", // Use AAC codec for audio
-          "-b:a",
-          "128k", // Audio bitrate
-          "-movflags",
-          "+faststart", // Optimize for web streaming
-          "-y", // Overwrite output file if it exists
-          outputPath,
-        ]);
-
-        ffmpegProcess.stderr.on("data", (data) => {
-          console.log(`ffmpeg: ${data.toString()}`);
-        });
-
-        ffmpegProcess.on("close", (code) => {
-          if (code === 0) {
-            console.log("Compression complete");
-            resolve();
-          } else {
-            reject(new Error(`ffmpeg process exited with code ${code}`));
-          }
-        });
-      } catch (error) {
-        reject(error);
-      }
-    });
-
-    ffprobeProcess.stderr.on("data", (data) => {
-      console.error(`ffprobe error: ${data.toString()}`);
-    });
-
-    ffprobeProcess.on("error", (err) => {
-      reject(err);
-    });
-  });
+    console.log("Compression complete");
+  } catch (error) {
+    console.error("Error during WebAssembly FFmpeg processing:", error);
+    throw error;
+  } finally {
+    // Terminate FFmpeg instance
+    ffmpeg.terminate();
+  }
 }
 
 export async function POST(request: Request) {
@@ -207,18 +210,19 @@ export async function POST(request: Request) {
       // Download the source file
       await downloadFile(sourceUrl, inputFilePath);
 
-      // Compress the video
-      await compressVideo(inputFilePath, outputFilePath, targetSizeMB);
+      // Compress the video using WebAssembly FFmpeg
+      await compressWebAssemblyVideo(
+        inputFilePath,
+        outputFilePath,
+        targetSizeMB,
+      );
 
       // Upload the compressed file to blob storage
       console.log("Uploading compressed video to blob storage");
-      const blob = await put(
-        outputFileName,
-        new Blob([await Binder.readFile(outputFilePath)]),
-        {
-          access: "public",
-        },
-      );
+      const fileBuffer = await readFile(outputFilePath);
+      const blob = await put(outputFileName, new Blob([fileBuffer]), {
+        access: "public",
+      });
 
       console.log(`Compressed video uploaded to ${blob.url}`);
 
@@ -264,12 +268,5 @@ export async function POST(request: Request) {
       },
       { status: 500 },
     );
-  }
-}
-
-// Helper to read file as buffer
-class Binder {
-  static async readFile(path: string): Promise<Buffer> {
-    return readFile(path);
   }
 }
