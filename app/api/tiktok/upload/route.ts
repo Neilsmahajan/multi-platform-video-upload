@@ -12,12 +12,12 @@ import { prisma } from "@/lib/prisma";
 
 // Define maximum chunk size for TikTok uploads
 // TikTok's documentation says each chunk must be at least 5MB but no greater than 64MB
-const MIN_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
-const MAX_CHUNK_SIZE = 64 * 1024 * 1024; // 64MB
+// const MIN_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
+// const MAX_CHUNK_SIZE = 64 * 1024 * 1024; // 64MB
 const MAX_SINGLE_UPLOAD_SIZE = 50 * 1024 * 1024; // 50MB - safer threshold for single chunk uploads
 
-// TikTok prefers specific chunk counts - based on testing, these work best
-const VALID_CHUNK_COUNTS = [1, 2, 3, 4, 5, 10, 20];
+// Valid chunk counts that TikTok seems to accept
+// const VALID_CHUNK_COUNTS = [1, 2, 3, 4, 10];
 
 export async function POST(request: Request) {
   try {
@@ -139,89 +139,100 @@ export async function POST(request: Request) {
       );
       console.log(`Content type: ${contentType}`);
 
-      // Check if video is suitable for TikTok
-      const finalVideoSize = videoSize;
-      const finalContentType = contentType;
-      const finalMediaUrl = mediaUrl;
+      // For large files (over 50MB), use PULL_FROM_URL instead of chunked upload
+      // This avoids the "invalid chunk count" errors from TikTok
+      const useDirectUrl = videoSize > MAX_SINGLE_UPLOAD_SIZE;
 
-      // Calculate optimal chunk size and count based on file size
-      let chunkSize;
-      let totalChunkCount;
-
-      if (finalVideoSize <= MAX_SINGLE_UPLOAD_SIZE) {
-        // For smaller files, use single chunk upload
-        chunkSize = finalVideoSize;
-        totalChunkCount = 1;
-        console.log(
-          `Using single chunk for ${(finalVideoSize / (1024 * 1024)).toFixed(
-            2,
-          )}MB file`,
-        );
-      } else {
-        // Calculate a reasonable chunk count based on file size
-        const idealChunkCount = Math.ceil(finalVideoSize / (20 * 1024 * 1024)); // Aim for ~20MB chunks
-
-        // Find the closest valid chunk count from our predefined list
-        totalChunkCount = VALID_CHUNK_COUNTS.reduce((prev, curr) =>
-          Math.abs(curr - idealChunkCount) < Math.abs(prev - idealChunkCount)
-            ? curr
-            : prev,
-        );
-
-        // Calculate chunk size based on chosen chunk count
-        chunkSize = Math.ceil(finalVideoSize / totalChunkCount);
-
-        // Ensure chunk size is within valid range
-        if (chunkSize < MIN_CHUNK_SIZE) {
-          // If chunks are too small, reduce the chunk count
-          const maxValidChunkCount = Math.floor(
-            finalVideoSize / MIN_CHUNK_SIZE,
-          );
-          totalChunkCount = VALID_CHUNK_COUNTS.filter(
-            (count) => count <= maxValidChunkCount,
-          ).reduce(
-            (prev, curr) =>
-              Math.abs(curr - idealChunkCount) <
-              Math.abs(prev - idealChunkCount)
-                ? curr
-                : prev,
-            VALID_CHUNK_COUNTS[0],
-          );
-          chunkSize = Math.ceil(finalVideoSize / totalChunkCount);
-        } else if (chunkSize > MAX_CHUNK_SIZE) {
-          // If chunks are too large, increase the chunk count
-          const minValidChunkCount = Math.ceil(finalVideoSize / MAX_CHUNK_SIZE);
-          totalChunkCount = VALID_CHUNK_COUNTS.filter(
-            (count) => count >= minValidChunkCount,
-          ).reduce(
-            (prev, curr) =>
-              Math.abs(curr - idealChunkCount) <
-              Math.abs(prev - idealChunkCount)
-                ? curr
-                : prev,
-            VALID_CHUNK_COUNTS[VALID_CHUNK_COUNTS.length - 1],
-          );
-          chunkSize = Math.ceil(finalVideoSize / totalChunkCount);
-        }
-
-        console.log(
-          `Using ${totalChunkCount} chunks of ${(
-            chunkSize /
-            (1024 * 1024)
-          ).toFixed(2)}MB each for ${(finalVideoSize / (1024 * 1024)).toFixed(
-            2,
-          )}MB file`,
-        );
-      }
-
-      console.log("Chunking configuration:", {
-        videoSize: finalVideoSize,
-        chunkSize,
-        totalChunkCount,
-      });
+      console.log(
+        `Using ${useDirectUrl ? "PULL_FROM_URL" : "FILE_UPLOAD"} for ${(
+          videoSize /
+          (1024 * 1024)
+        ).toFixed(2)}MB file`,
+      );
 
       // Start the video upload process with TikTok
-      console.log("Initializing TikTok video upload with FILE_UPLOAD method");
+      console.log(
+        `Initializing TikTok video upload with ${
+          useDirectUrl ? "PULL_FROM_URL" : "FILE_UPLOAD"
+        } method`,
+      );
+
+      // Declare these variables at a higher scope so they're available later
+      const chunkSize: number = videoSize;
+      const totalChunkCount: number = 1;
+
+      let requestBody;
+
+      if (useDirectUrl) {
+        // Use PULL_FROM_URL for larger files
+        requestBody = {
+          post_info: {
+            title: caption.substring(0, 2200), // TikTok limits captions to 2200 chars
+            privacy_level: privacyLevel,
+            disable_duet: false,
+            disable_comment: false,
+            disable_stitch: false,
+            video_cover_timestamp_ms: 0, // Use first frame as cover
+          },
+          source_info: {
+            source: "PULL_FROM_URL",
+            video_url: mediaUrl,
+          },
+        };
+      } else {
+        // Use FILE_UPLOAD with chunking for smaller files
+        // Calculate optimal chunk size and count based on file size
+        let chunkSize;
+        let totalChunkCount;
+
+        if (videoSize <= MAX_SINGLE_UPLOAD_SIZE) {
+          // For smaller files, use single chunk upload
+          chunkSize = videoSize;
+          totalChunkCount = 1;
+          console.log(
+            `Using single chunk for ${(videoSize / (1024 * 1024)).toFixed(
+              2,
+            )}MB file`,
+          );
+        } else {
+          // Use fixed count of 4 chunks for files that are moderately large
+          totalChunkCount = 4;
+          chunkSize = Math.ceil(videoSize / totalChunkCount);
+
+          console.log(
+            `Using ${totalChunkCount} chunks of ${(
+              chunkSize /
+              (1024 * 1024)
+            ).toFixed(2)}MB each for ${(videoSize / (1024 * 1024)).toFixed(
+              2,
+            )}MB file`,
+          );
+        }
+
+        console.log("Chunking configuration:", {
+          videoSize,
+          chunkSize,
+          totalChunkCount,
+        });
+
+        requestBody = {
+          post_info: {
+            title: caption.substring(0, 2200),
+            privacy_level: privacyLevel,
+            disable_duet: false,
+            disable_comment: false,
+            disable_stitch: false,
+            video_cover_timestamp_ms: 0,
+          },
+          source_info: {
+            source: "FILE_UPLOAD",
+            video_size: videoSize,
+            chunk_size: chunkSize,
+            total_chunk_count: totalChunkCount,
+          },
+        };
+      }
+
       const initResponse = await fetch(
         "https://open.tiktokapis.com/v2/post/publish/video/init/",
         {
@@ -230,22 +241,7 @@ export async function POST(request: Request) {
             Authorization: `Bearer ${tiktokAccount.access_token}`,
             "Content-Type": "application/json; charset=UTF-8",
           },
-          body: JSON.stringify({
-            post_info: {
-              title: caption.substring(0, 2200), // TikTok limits captions to 2200 chars
-              privacy_level: privacyLevel,
-              disable_duet: false,
-              disable_comment: false,
-              disable_stitch: false,
-              video_cover_timestamp_ms: 0, // Use first frame as cover
-            },
-            source_info: {
-              source: "FILE_UPLOAD",
-              video_size: finalVideoSize,
-              chunk_size: chunkSize,
-              total_chunk_count: totalChunkCount,
-            },
-          }),
+          body: JSON.stringify(requestBody),
         },
       );
 
@@ -272,11 +268,7 @@ export async function POST(request: Request) {
         const initData = JSON.parse(responseText);
         console.log("TikTok init response:", initData);
 
-        if (
-          !initData.data ||
-          !initData.data.publish_id ||
-          !initData.data.upload_url
-        ) {
+        if (!initData.data || !initData.data.publish_id) {
           console.error("Invalid response from TikTok init API:", initData);
           return NextResponse.json(
             { error: "Invalid response from TikTok" },
@@ -285,16 +277,35 @@ export async function POST(request: Request) {
         }
 
         const publishId = initData.data.publish_id;
+
+        if (useDirectUrl) {
+          // For PULL_FROM_URL, we're done - TikTok will pull the video from our URL
+          console.log(
+            "TikTok direct post initialized with publish_id:",
+            publishId,
+          );
+          console.log("TikTok will pull the video from URL:", mediaUrl);
+
+          // Return success response right away
+          return NextResponse.json({
+            status: "processing",
+            publishId: publishId,
+            accessToken: tiktokAccount.access_token,
+            mediaUrl: mediaUrl,
+            originalMediaUrl: originalMediaUrl || null,
+            message:
+              "Video URL submitted to TikTok and is being processed for direct posting.",
+            note: "Your video will be posted with private (Only Me) visibility. You can change the visibility settings in the TikTok app after publishing is complete.",
+          });
+        }
+
+        // For FILE_UPLOAD, continue with the upload process
         const uploadUrl = initData.data.upload_url;
 
-        console.log(
-          "TikTok direct post initialized with publish_id:",
-          publishId,
-        );
         console.log("TikTok upload URL:", uploadUrl);
 
         // Now fetch the video
-        const videoResponse = await fetch(finalMediaUrl);
+        const videoResponse = await fetch(mediaUrl);
         if (!videoResponse.ok) {
           console.error("Failed to fetch video from blob URL", {
             status: videoResponse.status,
@@ -307,6 +318,8 @@ export async function POST(request: Request) {
 
         // Get video as array buffer
         const videoBuffer = await videoResponse.arrayBuffer();
+        const finalVideoSize = videoSize;
+        const finalContentType = contentType;
 
         if (totalChunkCount === 1) {
           // Single chunk upload (entire file)
@@ -418,7 +431,7 @@ export async function POST(request: Request) {
           status: "processing",
           publishId: publishId,
           accessToken: tiktokAccount.access_token,
-          mediaUrl: finalMediaUrl,
+          mediaUrl: mediaUrl,
           originalMediaUrl: originalMediaUrl || null,
           message:
             "Video uploaded to TikTok and is being processed for direct posting.",

@@ -113,12 +113,13 @@ export default function UploadForm({
 
   // Helper function to check if a file is large and needs compression
   const needsCompression = (fileSize: number, platform: string): boolean => {
-    // For TikTok, compress files larger than 50MB
-    if (platform === "tiktok" && fileSize > 50 * 1024 * 1024) {
-      return true;
+    // Disable compression for TikTok - we'll use PULL_FROM_URL instead
+    if (platform === "tiktok") {
+      return false;
     }
-    // Add rules for other platforms as needed
-    return false;
+
+    // For other platforms, compress files larger than 50MB
+    return fileSize > 50 * 1024 * 1024;
   };
 
   // Helper function to compress a video
@@ -337,7 +338,7 @@ export default function UploadForm({
         try {
           console.log("Starting TikTok upload with blob URL:", videoUrl);
 
-          // Show processing indicator (regardless of whether we already compressed)
+          // Always show processing indicator for TikTok uploads
           setIsCompressing(true);
 
           const tiktokRes = await fetch("/api/tiktok/upload", {
@@ -346,7 +347,7 @@ export default function UploadForm({
             body: JSON.stringify({
               mediaUrl: videoUrl,
               caption: description || title,
-              originalMediaUrl: originalUrl, // Pass original URL if it exists
+              // No need to pass originalMediaUrl since we're not compressing
             }),
           });
           setIsCompressing(false);
