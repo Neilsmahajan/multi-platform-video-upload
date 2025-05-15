@@ -111,16 +111,6 @@ export default function UploadForm({
     }
   };
 
-  // Helper function to check if a file is large and needs compression
-  const needsCompression = (fileSize: number, platform: string): boolean => {
-    // For TikTok, compress files larger than 50MB
-    if (platform === "tiktok" && fileSize > 50 * 1024 * 1024) {
-      return true;
-    }
-    // Add rules for other platforms as needed
-    return false;
-  };
-
   // Helper function to compress a video
   const compressVideo = async (
     fileUrl: string,
@@ -128,6 +118,10 @@ export default function UploadForm({
   ): Promise<string> => {
     setIsCompressing(true);
     try {
+      console.log(
+        `Starting compression for ${fileName} (${(fileUrl.length / 1024).toFixed(2)}KB URL)`,
+      );
+
       const compressResponse = await fetch("/api/video/compress", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -178,8 +172,8 @@ export default function UploadForm({
       let videoUrl = blobResult.url;
       let originalUrl = null;
 
-      // If large file and platform is TikTok, compress it
-      if (needsCompression(file.size, platform)) {
+      // For TikTok, always compress videos larger than 25MB
+      if (platform === "tiktok" && file.size > 25 * 1024 * 1024) {
         console.log(
           `Large file detected (${(file.size / (1024 * 1024)).toFixed(2)}MB), compressing for ${platform}...`,
         );
@@ -192,7 +186,16 @@ export default function UploadForm({
             "Compression failed, using original file:",
             compressionError,
           );
-          // Continue with original file if compression fails
+          // For TikTok we should abort if compression fails for large files
+          if (platform === "tiktok") {
+            setIsUploading(false);
+            setUploadStatus("error");
+            setErrorMessages([
+              "TikTok uploads require compression for videos larger than 25MB, but compression failed. Please try a smaller video or try again later.",
+            ]);
+            return;
+          }
+          // For other platforms, continue with original file if compression fails
           videoUrl = blobResult.url;
           originalUrl = null;
         }

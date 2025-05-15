@@ -2,12 +2,11 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { put } from "@vercel/blob";
 import { createWriteStream } from "fs";
-import { mkdir, unlink, readFile, writeFile } from "fs/promises";
+import { mkdir, unlink, readFile } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { randomUUID } from "crypto";
-import { FFmpeg } from "@ffmpeg/ffmpeg";
-import { toBlobURL } from "@ffmpeg/util";
+import ffmpeg from "fluent-ffmpeg";
 
 // Configure max file size - 100MB
 export const config = {
@@ -51,8 +50,8 @@ async function downloadFile(url: string, outputPath: string): Promise<void> {
   });
 }
 
-// Helper function to compress video using WebAssembly FFmpeg
-async function compressWebAssemblyVideo(
+// Helper function to compress video using fluent-ffmpeg
+async function compressVideo(
   inputPath: string,
   outputPath: string,
   targetSizeMB: number,
@@ -61,103 +60,71 @@ async function compressWebAssemblyVideo(
     `Compressing video from ${inputPath} to ${outputPath} with target size ${targetSizeMB}MB`,
   );
 
-  const ffmpegLogs: string[] = [];
-  const ffmpeg = new FFmpeg();
-  const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.2/dist/umd";
+  // Get video duration and bitrate information
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(inputPath, (err, metadata) => {
+      if (err) {
+        console.error("Error probing video:", err);
+        return reject(err);
+      }
 
-  console.log("Loading FFmpeg WebAssembly...");
-  ffmpeg.on("log", ({ message }) => {
-    ffmpegLogs.push(message);
+      try {
+        // Get video duration in seconds
+        const duration = metadata.format.duration || 60; // Default to 60 seconds if duration not found
+        console.log(`Video duration: ${duration} seconds`);
+
+        // Calculate target bitrate based on desired file size
+        // Formula: bitrate (in kbps) = targetSize (in kb) / duration (in seconds) * 0.9
+        // The 0.9 factor accounts for container overhead
+        const targetSizeKb = targetSizeMB * 8 * 1024; // Convert MB to kilobits
+        const calculatedBitrate = Math.floor((targetSizeKb / duration) * 0.9);
+        console.log(`Calculated video bitrate: ${calculatedBitrate}k`);
+
+        // Set up ffmpeg command with calculated parameters
+        const command = ffmpeg(inputPath)
+          .outputOptions([
+            "-c:v libx264", // Use H.264 codec for video
+            "-preset fast", // Compression preset (faster encoding, larger file size)
+            `-b:v ${calculatedBitrate}k`, // Video bitrate
+            `-maxrate ${calculatedBitrate * 1.5}k`, // Max bitrate
+            `-bufsize ${calculatedBitrate * 3}k`, // Buffer size
+            "-c:a aac", // Use AAC codec for audio
+            "-b:a 128k", // Audio bitrate
+            "-movflags +faststart", // Optimize for web streaming
+          ])
+          .output(outputPath);
+
+        // Add event handlers
+        command
+          .on("start", (commandLine) => {
+            console.log("FFmpeg process started:", commandLine);
+          })
+          .on("progress", (progress) => {
+            if (progress.percent) {
+              console.log(
+                `Compression progress: ${Math.round(progress.percent)}%`,
+              );
+            } else if (progress.frames) {
+              console.log(`Processed ${progress.frames} frames`);
+            }
+          })
+          .on("error", (err) => {
+            console.error("Error during video compression:", err);
+            reject(err);
+          })
+          .on("end", () => {
+            console.log("Video compression completed successfully");
+            resolve();
+          });
+
+        // Run the ffmpeg command
+        command.run();
+      } catch (error) {
+        console.error("Error setting up ffmpeg command:", error);
+        reject(error);
+      }
+    });
   });
-
-  await ffmpeg.load({
-    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, "text/javascript"),
-    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, "application/wasm"),
-  });
-
-  try {
-    console.log("FFmpeg WebAssembly loaded successfully");
-
-    // Read input file
-    const inputData = await readFile(inputPath);
-
-    // Write file to FFmpeg's virtual filesystem
-    console.log("Writing input file to FFmpeg's virtual filesystem");
-    await ffmpeg.writeFile("input.mp4", new Uint8Array(inputData));
-
-    // Parse logs to find video duration (hacky but works with WebAssembly FFmpeg)
-    const logs = ffmpegLogs.join("\n");
-    console.log("FFmpeg analysis logs:", logs);
-
-    // Extract duration from logs
-    const durationMatch = logs.match(
-      /Duration: (\d{2}):(\d{2}):(\d{2})\.(\d{2})/,
-    );
-    let durationInSeconds = 0;
-
-    if (durationMatch) {
-      const hours = parseInt(durationMatch[1]);
-      const minutes = parseInt(durationMatch[2]);
-      const seconds = parseInt(durationMatch[3]);
-      durationInSeconds = hours * 3600 + minutes * 60 + seconds;
-      console.log(`Video duration: ${durationInSeconds} seconds`);
-    } else {
-      console.log("Could not determine duration, using default bitrate");
-      durationInSeconds = 60; // Assume 1 minute if we can't determine duration
-    }
-
-    // Calculate target bitrate based on size
-    const targetSizeKb = targetSizeMB * 8 * 1024; // Convert MB to kilobits
-    const calculatedBitrate = Math.floor(
-      (targetSizeKb / durationInSeconds) * 0.9,
-    ); // 0.9 as safety factor
-    console.log(`Calculated bitrate: ${calculatedBitrate}k`);
-
-    // Perform video compression with calculated bitrate
-    console.log("Running compression with WebAssembly FFmpeg");
-    await ffmpeg.exec([
-      "-i",
-      "input.mp4",
-      "-c:v",
-      "libx264", // Use H.264 codec for video
-      "-preset",
-      "fast", // Compression preset
-      "-b:v",
-      `${calculatedBitrate}k`, // Video bitrate
-      "-maxrate",
-      `${calculatedBitrate * 1.5}k`, // Max bitrate
-      "-bufsize",
-      `${calculatedBitrate * 3}k`, // Buffer size
-      "-c:a",
-      "aac", // Use AAC codec for audio
-      "-b:a",
-      "128k", // Audio bitrate
-      "-movflags",
-      "+faststart", // Optimize for web streaming
-      "output.mp4", // Output filename in virtual filesystem
-    ]);
-
-    console.log("Video compression completed");
-
-    // Read the compressed video from FFmpeg's virtual filesystem
-    const outputData = await ffmpeg.readFile("output.mp4");
-
-    // Write the compressed video to the output path
-    console.log("Writing compressed video to disk");
-    await writeFile(outputPath, outputData);
-
-    // Clean up virtual filesystem
-    await ffmpeg.deleteFile("input.mp4");
-    await ffmpeg.deleteFile("output.mp4");
-
-    console.log("Compression complete");
-  } catch (error) {
-    console.error("Error during WebAssembly FFmpeg processing:", error);
-    throw error;
-  } finally {
-    // Terminate FFmpeg instance
-    ffmpeg.terminate();
-  }
 }
 
 export async function POST(request: Request) {
@@ -210,12 +177,8 @@ export async function POST(request: Request) {
       // Download the source file
       await downloadFile(sourceUrl, inputFilePath);
 
-      // Compress the video using WebAssembly FFmpeg
-      await compressWebAssemblyVideo(
-        inputFilePath,
-        outputFilePath,
-        targetSizeMB,
-      );
+      // Compress the video using fluent-ffmpeg
+      await compressVideo(inputFilePath, outputFilePath, targetSizeMB);
 
       // Upload the compressed file to blob storage
       console.log("Uploading compressed video to blob storage");
