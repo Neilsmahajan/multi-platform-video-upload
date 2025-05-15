@@ -16,6 +16,9 @@ const MIN_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
 const MAX_CHUNK_SIZE = 64 * 1024 * 1024; // 64MB
 const MAX_SINGLE_UPLOAD_SIZE = 50 * 1024 * 1024; // 50MB - safer threshold for single chunk uploads
 
+// TikTok prefers specific chunk counts - based on testing, these work best
+const VALID_CHUNK_COUNTS = [1, 2, 3, 4, 5, 10, 20];
+
 export async function POST(request: Request) {
   try {
     // Validate session
@@ -141,7 +144,7 @@ export async function POST(request: Request) {
       const finalContentType = contentType;
       const finalMediaUrl = mediaUrl;
 
-      // Calculate optimal chunk size based on file size
+      // Calculate optimal chunk size and count based on file size
       let chunkSize;
       let totalChunkCount;
 
@@ -155,19 +158,50 @@ export async function POST(request: Request) {
           )}MB file`,
         );
       } else {
-        // Fix: TikTok has specific requirements for chunk counts
-        // Use fixed chunk count of 5 for files larger than 50MB
-        totalChunkCount = 5; // TikTok seems to prefer fixed chunk counts
-        // Calculate chunk size to evenly distribute the file
+        // Calculate a reasonable chunk count based on file size
+        const idealChunkCount = Math.ceil(finalVideoSize / (20 * 1024 * 1024)); // Aim for ~20MB chunks
+
+        // Find the closest valid chunk count from our predefined list
+        totalChunkCount = VALID_CHUNK_COUNTS.reduce((prev, curr) =>
+          Math.abs(curr - idealChunkCount) < Math.abs(prev - idealChunkCount)
+            ? curr
+            : prev,
+        );
+
+        // Calculate chunk size based on chosen chunk count
         chunkSize = Math.ceil(finalVideoSize / totalChunkCount);
 
-        // Ensure chunk size is at least MIN_CHUNK_SIZE
-        chunkSize = Math.max(chunkSize, MIN_CHUNK_SIZE);
-
-        // Recalculate chunk count if needed to ensure all chunks are valid size
-        if (chunkSize > MAX_CHUNK_SIZE) {
-          chunkSize = MAX_CHUNK_SIZE;
-          totalChunkCount = Math.ceil(finalVideoSize / chunkSize);
+        // Ensure chunk size is within valid range
+        if (chunkSize < MIN_CHUNK_SIZE) {
+          // If chunks are too small, reduce the chunk count
+          const maxValidChunkCount = Math.floor(
+            finalVideoSize / MIN_CHUNK_SIZE,
+          );
+          totalChunkCount = VALID_CHUNK_COUNTS.filter(
+            (count) => count <= maxValidChunkCount,
+          ).reduce(
+            (prev, curr) =>
+              Math.abs(curr - idealChunkCount) <
+              Math.abs(prev - idealChunkCount)
+                ? curr
+                : prev,
+            VALID_CHUNK_COUNTS[0],
+          );
+          chunkSize = Math.ceil(finalVideoSize / totalChunkCount);
+        } else if (chunkSize > MAX_CHUNK_SIZE) {
+          // If chunks are too large, increase the chunk count
+          const minValidChunkCount = Math.ceil(finalVideoSize / MAX_CHUNK_SIZE);
+          totalChunkCount = VALID_CHUNK_COUNTS.filter(
+            (count) => count >= minValidChunkCount,
+          ).reduce(
+            (prev, curr) =>
+              Math.abs(curr - idealChunkCount) <
+              Math.abs(prev - idealChunkCount)
+                ? curr
+                : prev,
+            VALID_CHUNK_COUNTS[VALID_CHUNK_COUNTS.length - 1],
+          );
+          chunkSize = Math.ceil(finalVideoSize / totalChunkCount);
         }
 
         console.log(

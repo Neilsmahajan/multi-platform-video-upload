@@ -125,9 +125,14 @@ export default function UploadForm({
   const compressVideo = async (
     fileUrl: string,
     fileName: string,
+    fileSize: number,
   ): Promise<string> => {
     setIsCompressing(true);
     try {
+      console.log(
+        `Compressing video: ${fileName} (${(fileSize / (1024 * 1024)).toFixed(2)} MB)`,
+      );
+
       const compressResponse = await fetch("/api/video/compress", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -185,7 +190,7 @@ export default function UploadForm({
         );
         try {
           originalUrl = videoUrl; // Store original URL
-          videoUrl = await compressVideo(blobResult.url, file.name);
+          videoUrl = await compressVideo(blobResult.url, file.name, file.size);
           console.log(`Video compressed successfully, new URL: ${videoUrl}`);
         } catch (compressionError) {
           console.error(
