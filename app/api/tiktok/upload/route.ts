@@ -14,10 +14,7 @@ import { prisma } from "@/lib/prisma";
 // TikTok's documentation says each chunk must be at least 5MB but no greater than 64MB
 const MIN_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
 const MAX_CHUNK_SIZE = 64 * 1024 * 1024; // 64MB
-// Files smaller than this threshold will use single-chunk upload
-const MAX_SINGLE_UPLOAD_SIZE = 25 * 1024 * 1024; // 25MB
-// Files larger than this size need compression before upload
-// const MAX_UPLOAD_SIZE_WITHOUT_COMPRESSION = 25 * 1024 * 1024; // 25MB
+const MAX_SINGLE_UPLOAD_SIZE = 50 * 1024 * 1024; // 50MB - safer threshold for single chunk uploads
 
 export async function POST(request: Request) {
   try {
@@ -145,8 +142,8 @@ export async function POST(request: Request) {
       const finalMediaUrl = mediaUrl;
 
       // Calculate optimal chunk size based on file size
-      let chunkSize = 0;
-      let totalChunkCount = 0;
+      let chunkSize;
+      let totalChunkCount;
 
       if (finalVideoSize <= MAX_SINGLE_UPLOAD_SIZE) {
         // For smaller files, use single chunk upload
@@ -158,28 +155,18 @@ export async function POST(request: Request) {
           )}MB file`,
         );
       } else {
-        // For 25-50MB files, use 3 chunks as recommended by TikTok
-        // For files over 50MB, use 5 chunks
-        if (finalVideoSize <= 50 * 1024 * 1024) {
-          totalChunkCount = 3;
-        } else {
-          totalChunkCount = 5;
-        }
-
+        // Fix: TikTok has specific requirements for chunk counts
+        // Use fixed chunk count of 5 for files larger than 50MB
+        totalChunkCount = 5; // TikTok seems to prefer fixed chunk counts
         // Calculate chunk size to evenly distribute the file
         chunkSize = Math.ceil(finalVideoSize / totalChunkCount);
 
         // Ensure chunk size is at least MIN_CHUNK_SIZE
-        if (chunkSize < MIN_CHUNK_SIZE) {
-          chunkSize = MIN_CHUNK_SIZE;
-          // Recalculate chunk count
-          totalChunkCount = Math.ceil(finalVideoSize / chunkSize);
-        }
+        chunkSize = Math.max(chunkSize, MIN_CHUNK_SIZE);
 
-        // Ensure chunk size doesn't exceed MAX_CHUNK_SIZE
+        // Recalculate chunk count if needed to ensure all chunks are valid size
         if (chunkSize > MAX_CHUNK_SIZE) {
           chunkSize = MAX_CHUNK_SIZE;
-          // Recalculate chunk count
           totalChunkCount = Math.ceil(finalVideoSize / chunkSize);
         }
 
