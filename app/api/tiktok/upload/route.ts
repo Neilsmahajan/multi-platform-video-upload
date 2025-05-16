@@ -13,7 +13,7 @@ import { prisma } from "@/lib/prisma";
 // Define maximum chunk size for TikTok uploads according to documentation
 const MIN_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
 const MAX_CHUNK_SIZE = 64 * 1024 * 1024; // 64MB
-// const MAX_LAST_CHUNK_SIZE = 128 * 1024 * 1024; // 128MB (for last chunk)
+const MAX_LAST_CHUNK_SIZE = 128 * 1024 * 1024; // 128MB (for last chunk)
 const MAX_SINGLE_UPLOAD_SIZE = 5 * 1024 * 1024; // 5MB - threshold for single chunk uploads
 
 export async function POST(request: Request) {
@@ -154,28 +154,39 @@ export async function POST(request: Request) {
         // We'll aim for chunks of ~25MB which is well within TikTok's requirements
         const targetChunkSize = 25 * 1024 * 1024; // 25MB target
 
-        // Calculate total chunks needed based on target size
-        totalChunkCount = Math.ceil(videoSize / targetChunkSize);
-
-        // Ensure we don't exceed 1000 chunks limit
-        if (totalChunkCount > 1000) {
-          // If we would exceed 1000 chunks, increase chunk size
-          chunkSize = Math.ceil(videoSize / 1000);
-        } else {
-          // Otherwise use our calculated chunk size
-          chunkSize = Math.ceil(videoSize / totalChunkCount);
-        }
+        // First determine a suitable chunk size
+        chunkSize = targetChunkSize;
 
         // Ensure chunk size is at least 5MB
         if (chunkSize < MIN_CHUNK_SIZE) {
           chunkSize = MIN_CHUNK_SIZE;
-          totalChunkCount = Math.ceil(videoSize / chunkSize);
         }
 
         // Ensure chunk size doesn't exceed 64MB
         if (chunkSize > MAX_CHUNK_SIZE) {
           chunkSize = MAX_CHUNK_SIZE;
-          totalChunkCount = Math.ceil(videoSize / chunkSize);
+        }
+
+        // Calculate total chunk count as per TikTok's requirements:
+        // "The value of total_chunk_count should be equal to video_size divided by chunk_size,
+        // rounded down to the nearest integer."
+        totalChunkCount = Math.floor(videoSize / chunkSize);
+
+        // Handle the remainder (last chunk) - if there's a remainder, we need one more chunk
+        if (videoSize % chunkSize !== 0) {
+          totalChunkCount += 1;
+        }
+
+        // Ensure we don't exceed 1000 chunks limit
+        if (totalChunkCount > 1000) {
+          // If we would exceed 1000 chunks, recalculate with a larger chunk size
+          chunkSize = Math.ceil(videoSize / 1000);
+          totalChunkCount = Math.floor(videoSize / chunkSize);
+
+          // Handle remainder again
+          if (videoSize % chunkSize !== 0) {
+            totalChunkCount += 1;
+          }
         }
 
         console.log(
@@ -328,13 +339,27 @@ export async function POST(request: Request) {
 
           for (let i = 0; i < totalChunkCount; i++) {
             const start = i * chunkSize;
-            const end = Math.min(start + chunkSize - 1, videoSize - 1);
+
+            // For the last chunk, we can have up to 128MB (MAX_LAST_CHUNK_SIZE)
+            // All other chunks must be exactly chunkSize (unless they're the last chunk and smaller)
+            const isLastChunk = i === totalChunkCount - 1;
+            const maxChunkSizeForThisChunk = isLastChunk
+              ? MAX_LAST_CHUNK_SIZE
+              : chunkSize;
+
+            const end = Math.min(
+              start + maxChunkSizeForThisChunk - 1,
+              videoSize - 1,
+            );
             const chunkLength = end - start + 1;
 
             console.log(
               `Uploading chunk ${
                 i + 1
-              }/${totalChunkCount}: bytes ${start}-${end}/${videoSize}`,
+              }/${totalChunkCount}: bytes ${start}-${end}/${videoSize} (${(
+                chunkLength /
+                (1024 * 1024)
+              ).toFixed(2)}MB)`,
             );
 
             const chunk = new Uint8Array(videoBuffer.slice(start, end + 1));
