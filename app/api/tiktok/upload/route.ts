@@ -11,9 +11,8 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
 // Define maximum chunk size for TikTok uploads according to documentation
-const MIN_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
+// const MIN_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
 const MAX_CHUNK_SIZE = 64 * 1024 * 1024; // 64MB
-// const MAX_LAST_CHUNK_SIZE = 128 * 1024 * 1024; // 128MB (for last chunk)
 const MAX_SINGLE_UPLOAD_SIZE = 5 * 1024 * 1024; // 5MB - threshold for single chunk uploads
 
 export async function POST(request: Request) {
@@ -150,32 +149,51 @@ export async function POST(request: Request) {
           )}MB file (under 5MB threshold)`,
         );
       } else {
-        // For larger files, calculate appropriate chunk size
-        // We'll aim for chunks of ~25MB which is well within TikTok's requirements
-        const targetChunkSize = 25 * 1024 * 1024; // 25MB target
+        // Follow TikTok's restrictions strictly for larger files
 
-        // Calculate total chunks needed based on target size
-        totalChunkCount = Math.ceil(videoSize / targetChunkSize);
-
-        // Ensure we don't exceed 1000 chunks limit
-        if (totalChunkCount > 1000) {
-          // If we would exceed 1000 chunks, increase chunk size
-          chunkSize = Math.ceil(videoSize / 1000);
+        // For videos between 5MB and 64MB, use a single chunk
+        if (videoSize <= MAX_CHUNK_SIZE) {
+          chunkSize = videoSize;
+          totalChunkCount = 1;
+          console.log(
+            `Using single chunk for ${(videoSize / (1024 * 1024)).toFixed(
+              2,
+            )}MB file (5MB-64MB range)`,
+          );
         } else {
-          // Otherwise use our calculated chunk size
-          chunkSize = Math.ceil(videoSize / totalChunkCount);
-        }
-
-        // Ensure chunk size is at least 5MB
-        if (chunkSize < MIN_CHUNK_SIZE) {
-          chunkSize = MIN_CHUNK_SIZE;
-          totalChunkCount = Math.ceil(videoSize / chunkSize);
-        }
-
-        // Ensure chunk size doesn't exceed 64MB
-        if (chunkSize > MAX_CHUNK_SIZE) {
+          // For videos larger than 64MB, need to use multiple chunks
+          // Use the maximum chunk size (64MB) to minimize chunk count
           chunkSize = MAX_CHUNK_SIZE;
-          totalChunkCount = Math.ceil(videoSize / chunkSize);
+
+          // Calculate total chunks needed with exact division (no ceiling)
+          // TikTok API is strict about this calculation
+          totalChunkCount = Math.floor(videoSize / chunkSize);
+
+          // If there's a remainder, we'll add 1 more chunk
+          if (videoSize % chunkSize > 0) {
+            totalChunkCount += 1;
+          }
+
+          // Validate total chunk count is within acceptable range (1-1000)
+          if (totalChunkCount > 1000) {
+            // If we exceed 1000 chunks, we need to increase chunk size
+            chunkSize = Math.ceil(videoSize / 1000);
+            totalChunkCount = 1000;
+            console.log(
+              `Adjusted chunk size to ${(chunkSize / (1024 * 1024)).toFixed(
+                2,
+              )}MB to stay within 1000 chunk limit`,
+            );
+          }
+
+          console.log(
+            `Using ${totalChunkCount} chunks of ${(
+              chunkSize /
+              (1024 * 1024)
+            ).toFixed(2)}MB each for ${(videoSize / (1024 * 1024)).toFixed(
+              2,
+            )}MB file`,
+          );
         }
 
         console.log(
@@ -226,17 +244,47 @@ export async function POST(request: Request) {
       const responseText = await initResponse.text();
 
       if (!initResponse.ok) {
+        // Try to parse the error response for more specific information
+        let errorDetails = "Unknown error";
+        let parsedError = null;
+
+        try {
+          parsedError = JSON.parse(responseText);
+          if (parsedError?.error?.message) {
+            errorDetails = parsedError.error.message;
+          }
+        } catch {
+          errorDetails = responseText.substring(0, 200);
+        }
+
         console.error("Failed to initialize TikTok upload:", {
           status: initResponse.status,
           response: responseText.substring(0, 500),
+          parsedError: parsedError,
         });
+
+        // Provide a more helpful error message for chunking issues
+        if (errorDetails.includes("chunk count is invalid")) {
+          return NextResponse.json(
+            {
+              error:
+                "Failed to initialize TikTok upload due to invalid chunking",
+              details: `TikTok requires specific chunk size calculations. The current configuration (${totalChunkCount} chunks of ${(
+                chunkSize /
+                (1024 * 1024)
+              ).toFixed(2)}MB each for a ${(videoSize / (1024 * 1024)).toFixed(
+                2,
+              )}MB file) is invalid. Please try again with a smaller file or contact support.`,
+              technicalDetails: errorDetails,
+            },
+            { status: initResponse.status },
+          );
+        }
 
         return NextResponse.json(
           {
             error: "Failed to initialize TikTok direct post",
-            details: `TikTok API returned ${
-              initResponse.status
-            }: ${responseText.substring(0, 200)}`,
+            details: `TikTok API returned ${initResponse.status}: ${errorDetails}`,
           },
           { status: initResponse.status },
         );
@@ -328,13 +376,27 @@ export async function POST(request: Request) {
 
           for (let i = 0; i < totalChunkCount; i++) {
             const start = i * chunkSize;
-            const end = Math.min(start + chunkSize - 1, videoSize - 1);
+            // Calculate the end byte position for this chunk
+            // The last chunk might be larger to accommodate remaining bytes
+            let end;
+
+            if (i === totalChunkCount - 1) {
+              // Last chunk - use the actual end of the file
+              end = videoSize - 1;
+            } else {
+              // Regular chunk - use standard chunk size
+              end = start + chunkSize - 1;
+            }
+
             const chunkLength = end - start + 1;
 
             console.log(
               `Uploading chunk ${
                 i + 1
-              }/${totalChunkCount}: bytes ${start}-${end}/${videoSize}`,
+              }/${totalChunkCount}: bytes ${start}-${end}/${videoSize} (${(
+                chunkLength /
+                (1024 * 1024)
+              ).toFixed(2)} MB)`,
             );
 
             const chunk = new Uint8Array(videoBuffer.slice(start, end + 1));
