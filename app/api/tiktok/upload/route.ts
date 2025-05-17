@@ -10,10 +10,11 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
-// Define maximum chunk size for TikTok uploads according to documentation
-// const MIN_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
-const MAX_CHUNK_SIZE = 64 * 1024 * 1024; // 64MB
+// Define chunk size constants for TikTok uploads according to documentation
+// const MIN_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB minimum chunk size
+const MAX_CHUNK_SIZE = 64 * 1024 * 1024; // 64MB maximum chunk size
 const MAX_SINGLE_UPLOAD_SIZE = 5 * 1024 * 1024; // 5MB - threshold for single chunk uploads
+const STANDARD_CHUNK_SIZE = 10 * 1000 * 1000; // Exactly 10MB (10,000,000 bytes) as used in TikTok examples
 
 export async function POST(request: Request) {
   try {
@@ -148,52 +149,38 @@ export async function POST(request: Request) {
             2,
           )}MB file (under 5MB threshold)`,
         );
-      } else {
-        // Follow TikTok's restrictions strictly for larger files
-
+      } else if (videoSize <= MAX_CHUNK_SIZE) {
         // For videos between 5MB and 64MB, use a single chunk
-        if (videoSize <= MAX_CHUNK_SIZE) {
-          chunkSize = videoSize;
-          totalChunkCount = 1;
-          console.log(
-            `Using single chunk for ${(videoSize / (1024 * 1024)).toFixed(
-              2,
-            )}MB file (5MB-64MB range)`,
-          );
-        } else {
-          // For videos larger than 64MB, need to use multiple chunks
-          // Use the maximum chunk size (64MB) to minimize chunk count
-          chunkSize = MAX_CHUNK_SIZE;
+        chunkSize = videoSize;
+        totalChunkCount = 1;
+        console.log(
+          `Using single chunk for ${(videoSize / (1024 * 1024)).toFixed(
+            2,
+          )}MB file (5MB-64MB range)`,
+        );
+      } else {
+        // For videos larger than 64MB, we need to use smaller chunks
+        // TikTok's API requires exact math for chunking
 
-          // Calculate total chunks needed with exact division (no ceiling)
-          // TikTok API is strict about this calculation
+        // Set the chunk size to exactly match TikTok's example (10,000,000 bytes)
+        chunkSize = STANDARD_CHUNK_SIZE;
+
+        // Calculate total chunk count according to TikTok documentation
+        // For example, 50,000,123 bytes with chunk size 10,000,000 should have 5 chunks
+        // Math.floor(50000123 / 10000000) = 5, but the last chunk has the remaining 123 bytes
+        totalChunkCount = Math.floor(videoSize / chunkSize);
+        if (videoSize % chunkSize > 0) {
+          totalChunkCount += 1;
+        }
+
+        // Ensure we don't exceed 1000 chunks (TikTok limit)
+        if (totalChunkCount > 1000) {
+          // If we would exceed 1000 chunks, recalculate with a larger chunk size
+          chunkSize = Math.ceil(videoSize / 1000);
           totalChunkCount = Math.floor(videoSize / chunkSize);
-
-          // If there's a remainder, we'll add 1 more chunk
           if (videoSize % chunkSize > 0) {
             totalChunkCount += 1;
           }
-
-          // Validate total chunk count is within acceptable range (1-1000)
-          if (totalChunkCount > 1000) {
-            // If we exceed 1000 chunks, we need to increase chunk size
-            chunkSize = Math.ceil(videoSize / 1000);
-            totalChunkCount = 1000;
-            console.log(
-              `Adjusted chunk size to ${(chunkSize / (1024 * 1024)).toFixed(
-                2,
-              )}MB to stay within 1000 chunk limit`,
-            );
-          }
-
-          console.log(
-            `Using ${totalChunkCount} chunks of ${(
-              chunkSize /
-              (1024 * 1024)
-            ).toFixed(2)}MB each for ${(videoSize / (1024 * 1024)).toFixed(
-              2,
-            )}MB file`,
-          );
         }
 
         console.log(
@@ -210,6 +197,9 @@ export async function POST(request: Request) {
         videoSize,
         chunkSize,
         totalChunkCount,
+        exactMath: `${Math.floor(videoSize / chunkSize)} chunks with ${
+          videoSize % chunkSize
+        } bytes remainder`,
       });
 
       // Start the video upload process with TikTok
