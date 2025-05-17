@@ -150,32 +150,33 @@ export async function POST(request: Request) {
           )}MB file (under 5MB threshold)`,
         );
       } else {
-        // For larger files, calculate chunk size based on target and TikTok requirements
-        const targetChunkSize = 25 * 1024 * 1024; // 25MB desired
-        // Start with desired chunk size bounded by min and max
-        let desiredChunkSize = Math.min(
-          Math.max(targetChunkSize, MIN_CHUNK_SIZE),
-          MAX_CHUNK_SIZE,
-        );
-        // Compute full chunks and remainder-based chunk count
-        const fullChunks = Math.floor(videoSize / desiredChunkSize);
-        const hasRemainder = videoSize % desiredChunkSize !== 0;
-        let count = fullChunks + (hasRemainder ? 1 : 0);
-        // Ensure at least one chunk
-        if (count < 1) count = 1;
-        // Handle TikTok 1000 chunk limit
-        if (count > 1000) {
-          desiredChunkSize = Math.ceil(videoSize / 1000);
-          desiredChunkSize = Math.min(
-            Math.max(desiredChunkSize, MIN_CHUNK_SIZE),
-            MAX_CHUNK_SIZE,
-          );
-          const newFullChunks = Math.floor(videoSize / desiredChunkSize);
-          const newHasRemainder = videoSize % desiredChunkSize !== 0;
-          count = newFullChunks + (newHasRemainder ? 1 : 0);
+        // For larger files, calculate appropriate chunk size
+        // We'll aim for chunks of ~25MB which is well within TikTok's requirements
+        const targetChunkSize = 25 * 1024 * 1024; // 25MB target
+
+        // Calculate total chunks needed based on target size
+        totalChunkCount = Math.ceil(videoSize / targetChunkSize);
+
+        // Ensure we don't exceed 1000 chunks limit
+        if (totalChunkCount > 1000) {
+          // If we would exceed 1000 chunks, increase chunk size
+          chunkSize = Math.ceil(videoSize / 1000);
+        } else {
+          // Otherwise use our calculated chunk size
+          chunkSize = Math.ceil(videoSize / totalChunkCount);
         }
-        chunkSize = desiredChunkSize;
-        totalChunkCount = count;
+
+        // Ensure chunk size is at least 5MB
+        if (chunkSize < MIN_CHUNK_SIZE) {
+          chunkSize = MIN_CHUNK_SIZE;
+          totalChunkCount = Math.ceil(videoSize / chunkSize);
+        }
+
+        // Ensure chunk size doesn't exceed 64MB
+        if (chunkSize > MAX_CHUNK_SIZE) {
+          chunkSize = MAX_CHUNK_SIZE;
+          totalChunkCount = Math.ceil(videoSize / chunkSize);
+        }
 
         console.log(
           `Using ${totalChunkCount} chunks of ${(
