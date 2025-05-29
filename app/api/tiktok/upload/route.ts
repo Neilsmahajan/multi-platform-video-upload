@@ -148,14 +148,32 @@ export async function POST(request: Request) {
           )}MB file (under 5MB - must be single chunk)`,
         );
       } else {
-        // For files 5MB and above, follow TikTok's chunking rules
-        // Use 64MB chunks (maximum allowed) to minimize chunk count
-        chunkSize = MAX_CHUNK_SIZE;
+        // For files 5MB and above, follow TikTok's exact chunking algorithm
+        // TikTok documentation states: "total_chunk_count should be equal to video_size divided by chunk_size, rounded down"
+        // This means we ALWAYS use Math.floor() and merge any remainder into the final chunk
 
-        // Calculate total chunks following TikTok's formula:
-        // From the documentation example: 50,000,123 bytes with 10,000,000 chunk size = 5 chunks
-        // This means: total_chunk_count = ceil(video_size / chunk_size)
-        totalChunkCount = Math.ceil(videoSize / chunkSize);
+        chunkSize = MAX_CHUNK_SIZE; // Start with 64MB
+        totalChunkCount = Math.floor(videoSize / chunkSize);
+
+        // If there's no remainder, we're done
+        if (videoSize % chunkSize === 0) {
+          // Perfect division, no adjustment needed
+          console.log(
+            `Perfect division: ${totalChunkCount} chunks of ${(
+              chunkSize /
+              (1024 * 1024)
+            ).toFixed(2)}MB each`,
+          );
+        } else {
+          // There's a remainder - we always merge it into the final chunk per TikTok's algorithm
+          // This means the final chunk will be larger than chunkSize
+          console.log(
+            `Remainder detected: ${(
+              (videoSize % chunkSize) /
+              (1024 * 1024)
+            ).toFixed(2)}MB will be merged into final chunk`,
+          );
+        }
 
         // Validate constraints
         if (totalChunkCount > 1000) {
@@ -165,7 +183,7 @@ export async function POST(request: Request) {
           if (chunkSize < MIN_CHUNK_SIZE) {
             chunkSize = MIN_CHUNK_SIZE;
           }
-          totalChunkCount = Math.ceil(videoSize / chunkSize);
+          totalChunkCount = Math.floor(videoSize / chunkSize);
           console.log(
             `Adjusted chunk size to ${(chunkSize / (1024 * 1024)).toFixed(
               2,
@@ -174,13 +192,27 @@ export async function POST(request: Request) {
         }
 
         console.log(
-          `Using ${totalChunkCount} chunks of ${(
-            chunkSize /
+          `TikTok chunking: ${totalChunkCount} chunks for ${(
+            videoSize /
             (1024 * 1024)
-          ).toFixed(2)}MB each for ${(videoSize / (1024 * 1024)).toFixed(
-            2,
-          )}MB file`,
+          ).toFixed(2)}MB file`,
         );
+        console.log(
+          `Base chunk size: ${(chunkSize / (1024 * 1024)).toFixed(2)}MB`,
+        );
+
+        // Calculate final chunk size (will be larger if there's a remainder)
+        const remainder = videoSize % chunkSize;
+        if (remainder > 0) {
+          const finalChunkSize = chunkSize + remainder;
+          console.log(
+            `Final chunk will be ${(finalChunkSize / (1024 * 1024)).toFixed(
+              2,
+            )}MB (includes ${(remainder / (1024 * 1024)).toFixed(
+              2,
+            )}MB remainder)`,
+          );
+        }
       }
 
       console.log("Chunking configuration:", {
@@ -242,17 +274,26 @@ export async function POST(request: Request) {
 
         // Provide a more helpful error message for chunking issues
         if (errorDetails.includes("chunk count is invalid")) {
+          const remainder = videoSize % chunkSize;
           return NextResponse.json(
             {
               error:
                 "Failed to initialize TikTok upload due to invalid chunking",
-              details: `TikTok requires specific chunk size calculations. The current configuration (${totalChunkCount} chunks of ${(
-                chunkSize /
-                (1024 * 1024)
-              ).toFixed(2)}MB each for a ${(videoSize / (1024 * 1024)).toFixed(
-                2,
-              )}MB file) is invalid. Please try again with a smaller file or contact support.`,
+              details: `TikTok chunk validation failed. Using floor-based calculation as required: floor(${videoSize} / ${chunkSize}) = ${totalChunkCount} chunks. ${
+                remainder > 0
+                  ? `Final chunk includes ${(remainder / (1024 * 1024)).toFixed(
+                      2,
+                    )}MB remainder.`
+                  : "Perfect division."
+              }`,
               technicalDetails: errorDetails,
+              chunkCalculation: {
+                videoSize,
+                chunkSize,
+                totalChunkCount,
+                remainder,
+                calculation: `floor(${videoSize} / ${chunkSize}) = ${totalChunkCount}`,
+              },
             },
             { status: initResponse.status },
           );
