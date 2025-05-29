@@ -295,9 +295,25 @@ export default function UploadForm({
                 "TikTok: Your video is being processed. Check your TikTok app notifications to continue editing and publishing.",
               ]);
 
-              // Start polling for status
+              // Start polling for status with exponential backoff
+              let pollCount = 0;
+              const maxPolls = 30; // Maximum 30 polls (about 2 minutes with exponential backoff)
+
               const checkStatus = async () => {
                 try {
+                  pollCount++;
+
+                  // Stop polling after maximum attempts
+                  if (pollCount > maxPolls) {
+                    console.log(
+                      "Maximum polling attempts reached for TikTok status check",
+                    );
+                    setErrorMessages([
+                      "TikTok: Processing is taking longer than expected. Please check your TikTok app for the video.",
+                    ]);
+                    return;
+                  }
+
                   const statusRes = await fetch("/api/tiktok/check-status", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -342,7 +358,10 @@ export default function UploadForm({
                           `TikTok: ${statusData.message}${statusData.note ? `\n${statusData.note}` : ""}`,
                         ]);
                       }
-                      setTimeout(checkStatus, 2000);
+
+                      // Exponential backoff: 2s, 4s, 6s, 8s, then 8s intervals
+                      const delay = Math.min(2000 + pollCount * 1000, 8000);
+                      setTimeout(checkStatus, delay);
                     } else if (statusData.status === "error") {
                       console.error("TikTok processing error:", statusData);
                       setUploadStatus("error");

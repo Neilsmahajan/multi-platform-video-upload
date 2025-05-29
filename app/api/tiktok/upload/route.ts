@@ -11,9 +11,8 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
 // Define maximum chunk size for TikTok uploads according to documentation
-// const MIN_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
-const MAX_CHUNK_SIZE = 64 * 1024 * 1024; // 64MB
-const MAX_SINGLE_UPLOAD_SIZE = 5 * 1024 * 1024; // 5MB - threshold for single chunk uploads
+const MIN_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB - minimum chunk size
+const MAX_CHUNK_SIZE = 64 * 1024 * 1024; // 64MB - maximum chunk size
 
 export async function POST(request: Request) {
   try {
@@ -135,64 +134,42 @@ export async function POST(request: Request) {
       );
       console.log(`Content type: ${contentType}`);
 
-      // Calculate optimal chunk size and count based on file size
+      // Calculate optimal chunk size and count based on TikTok's exact requirements
       let chunkSize;
       let totalChunkCount;
 
-      if (videoSize <= MAX_SINGLE_UPLOAD_SIZE) {
-        // For smaller files (under 5MB), use single chunk upload
+      if (videoSize < MIN_CHUNK_SIZE) {
+        // Files under 5MB must be uploaded as a single chunk
         chunkSize = videoSize;
         totalChunkCount = 1;
         console.log(
           `Using single chunk for ${(videoSize / (1024 * 1024)).toFixed(
             2,
-          )}MB file (under 5MB threshold)`,
+          )}MB file (under 5MB - must be single chunk)`,
         );
       } else {
-        // Follow TikTok's restrictions strictly for larger files
+        // For files 5MB and above, follow TikTok's chunking rules
+        // Use 64MB chunks (maximum allowed) to minimize chunk count
+        chunkSize = MAX_CHUNK_SIZE;
 
-        // For videos between 5MB and 64MB, use a single chunk
-        if (videoSize <= MAX_CHUNK_SIZE) {
-          chunkSize = videoSize;
-          totalChunkCount = 1;
-          console.log(
-            `Using single chunk for ${(videoSize / (1024 * 1024)).toFixed(
-              2,
-            )}MB file (5MB-64MB range)`,
-          );
-        } else {
-          // For videos larger than 64MB, need to use multiple chunks
-          // Use the maximum chunk size (64MB) to minimize chunk count
-          chunkSize = MAX_CHUNK_SIZE;
+        // Calculate total chunks following TikTok's formula:
+        // From the documentation example: 50,000,123 bytes with 10,000,000 chunk size = 5 chunks
+        // This means: total_chunk_count = ceil(video_size / chunk_size)
+        totalChunkCount = Math.ceil(videoSize / chunkSize);
 
-          // Calculate total chunks needed with exact division (no ceiling)
-          // TikTok API is strict about this calculation
-          totalChunkCount = Math.floor(videoSize / chunkSize);
-
-          // If there's a remainder, we'll add 1 more chunk
-          if (videoSize % chunkSize > 0) {
-            totalChunkCount += 1;
+        // Validate constraints
+        if (totalChunkCount > 1000) {
+          // Adjust chunk size to stay within 1000 chunk limit
+          chunkSize = Math.ceil(videoSize / 1000);
+          // Ensure chunk size is at least 5MB
+          if (chunkSize < MIN_CHUNK_SIZE) {
+            chunkSize = MIN_CHUNK_SIZE;
           }
-
-          // Validate total chunk count is within acceptable range (1-1000)
-          if (totalChunkCount > 1000) {
-            // If we exceed 1000 chunks, we need to increase chunk size
-            chunkSize = Math.ceil(videoSize / 1000);
-            totalChunkCount = 1000;
-            console.log(
-              `Adjusted chunk size to ${(chunkSize / (1024 * 1024)).toFixed(
-                2,
-              )}MB to stay within 1000 chunk limit`,
-            );
-          }
-
+          totalChunkCount = Math.ceil(videoSize / chunkSize);
           console.log(
-            `Using ${totalChunkCount} chunks of ${(
-              chunkSize /
-              (1024 * 1024)
-            ).toFixed(2)}MB each for ${(videoSize / (1024 * 1024)).toFixed(
+            `Adjusted chunk size to ${(chunkSize / (1024 * 1024)).toFixed(
               2,
-            )}MB file`,
+            )}MB to stay within 1000 chunk limit`,
           );
         }
 
