@@ -262,6 +262,15 @@ export default function UploadForm({
         try {
           console.log("Starting TikTok upload with blob URL:", videoUrl);
 
+          // Set a more informative message for TikTok uploads
+          setErrorMessages([
+            "TikTok: Processing your video upload. This may take several minutes for larger files...",
+          ]);
+
+          // Create an AbortController for timeout handling
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
+
           const tiktokRes = await fetch("/api/tiktok/upload", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -270,7 +279,9 @@ export default function UploadForm({
               caption: description || title,
               originalMediaUrl: originalUrl, // Pass original URL if it exists
             }),
+            signal: controller.signal,
           });
+          clearTimeout(timeoutId);
 
           // Process TikTok response
           let tiktokData;
@@ -405,9 +416,17 @@ export default function UploadForm({
           }
         } catch (error) {
           console.error("Error uploading to TikTok:", error);
-          uploadErrors.push(
-            `TikTok: ${error instanceof Error ? error.message : "Unknown error"}`,
-          );
+
+          // Handle timeout/abort errors specifically
+          if (error instanceof Error && error.name === "AbortError") {
+            uploadErrors.push(
+              "TikTok: Upload timeout - The video upload took too long. Please try again with a smaller file or better internet connection.",
+            );
+          } else {
+            uploadErrors.push(
+              `TikTok: ${error instanceof Error ? error.message : "Unknown error"}`,
+            );
+          }
         }
       }
 

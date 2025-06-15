@@ -10,9 +10,121 @@ import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 
-// Define maximum chunk size for TikTok uploads according to documentation
-const MIN_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB - minimum chunk size
-const MAX_CHUNK_SIZE = 64 * 1024 * 1024; // 64MB - maximum chunk size
+// Define chunk sizes for TikTok uploads - optimized for reliability
+const MIN_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB - minimum chunk size required by TikTok
+const OPTIMAL_CHUNK_SIZE = 10 * 1024 * 1024; // 10MB - optimal for network reliability
+
+// Upload timeout and retry configuration
+const UPLOAD_TIMEOUT_MS = 120000; // 2 minutes per chunk
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 2000; // 2 second delay between retries
+
+// Helper function to create a fetch request with timeout
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number = UPLOAD_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`Request timeout after ${timeoutMs / 1000} seconds`);
+    }
+    throw error;
+  }
+}
+
+// Helper function to upload a chunk with retry logic
+async function uploadChunkWithRetry(
+  uploadUrl: string,
+  chunk: Uint8Array,
+  start: number,
+  end: number,
+  videoSize: number,
+  contentType: string,
+  chunkIndex: number,
+  totalChunks: number,
+): Promise<void> {
+  const chunkLength = end - start + 1;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(
+        `Uploading chunk ${
+          chunkIndex + 1
+        }/${totalChunks}: bytes ${start}-${end}/${videoSize} (${(
+          chunkLength /
+          (1024 * 1024)
+        ).toFixed(2)} MB) - Attempt ${attempt}/${MAX_RETRIES}`,
+      );
+
+      const uploadResponse = await fetchWithTimeout(uploadUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Type": contentType,
+          "Content-Range": `bytes ${start}-${end}/${videoSize}`,
+          "Content-Length": chunkLength.toString(),
+        },
+        body: chunk,
+      });
+
+      if (!uploadResponse.ok) {
+        let uploadError;
+        try {
+          uploadError = await uploadResponse.text();
+        } catch {
+          uploadError = "Could not read error response";
+        }
+
+        const errorMessage = `Chunk ${
+          chunkIndex + 1
+        }/${totalChunks} upload failed with status ${uploadResponse.status}: ${
+          uploadResponse.statusText
+        }. Error: ${uploadError}`;
+
+        if (attempt === MAX_RETRIES) {
+          throw new Error(errorMessage);
+        }
+
+        console.warn(
+          `${errorMessage}. Retrying in ${RETRY_DELAY_MS / 1000} seconds...`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+        continue;
+      }
+
+      console.log(
+        `✓ Chunk ${chunkIndex + 1}/${totalChunks} uploaded successfully`,
+      );
+      return; // Success, exit retry loop
+    } catch (error) {
+      const errorMessage = `Chunk ${
+        chunkIndex + 1
+      }/${totalChunks} upload attempt ${attempt} failed: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`;
+
+      if (attempt === MAX_RETRIES) {
+        throw new Error(errorMessage);
+      }
+
+      console.warn(
+        `${errorMessage}. Retrying in ${RETRY_DELAY_MS / 1000} seconds...`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+    }
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -68,7 +180,7 @@ export async function POST(request: Request) {
     try {
       // First fetch creator info directly from TikTok API
       console.log("Fetching TikTok creator info");
-      const creatorInfoResponse = await fetch(
+      const creatorInfoResponse = await fetchWithTimeout(
         "https://open.tiktokapis.com/v2/post/publish/creator_info/query/",
         {
           method: "POST",
@@ -77,6 +189,7 @@ export async function POST(request: Request) {
             "Content-Type": "application/json; charset=UTF-8",
           },
         },
+        30000, // 30 second timeout for API calls
       );
 
       // Handle response
@@ -109,7 +222,14 @@ export async function POST(request: Request) {
       );
 
       // Get information about the file first with a HEAD request
-      const headResponse = await fetch(mediaUrl, { method: "HEAD" });
+      const headResponse = await fetchWithTimeout(
+        mediaUrl,
+        {
+          method: "HEAD",
+        },
+        30000,
+      ); // 30 second timeout for metadata
+
       if (!headResponse.ok) {
         console.error("Failed to get video metadata", {
           status: headResponse.status,
@@ -148,9 +268,9 @@ export async function POST(request: Request) {
           )}MB file (under 5MB - must be single chunk)`,
         );
       } else {
-        // For files 5MB and above, follow TikTok's chunking rules
-        // Use 64MB chunks (maximum allowed) to minimize chunk count
-        chunkSize = MAX_CHUNK_SIZE;
+        // For files 5MB and above, use optimal chunk size for better reliability
+        // Use 10MB chunks for better network reliability instead of maximum 64MB
+        chunkSize = OPTIMAL_CHUNK_SIZE;
 
         // Calculate total chunks following TikTok's formula:
         // From the documentation example: 50,000,123 bytes with 10,000,000 chunk size = 5 chunks
@@ -179,7 +299,7 @@ export async function POST(request: Request) {
             (1024 * 1024)
           ).toFixed(2)}MB each for ${(videoSize / (1024 * 1024)).toFixed(
             2,
-          )}MB file`,
+          )}MB file (optimized for network reliability)`,
         );
       }
 
@@ -191,7 +311,7 @@ export async function POST(request: Request) {
 
       // Start the video upload process with TikTok
       console.log("Initializing TikTok video upload with FILE_UPLOAD method");
-      const initResponse = await fetch(
+      const initResponse = await fetchWithTimeout(
         "https://open.tiktokapis.com/v2/post/publish/video/init/",
         {
           method: "POST",
@@ -216,6 +336,7 @@ export async function POST(request: Request) {
             },
           }),
         },
+        45000, // 45 second timeout for init call
       );
 
       const responseText = await initResponse.text();
@@ -292,8 +413,16 @@ export async function POST(request: Request) {
         );
         console.log("TikTok upload URL:", uploadUrl);
 
-        // Now fetch the video
-        const videoResponse = await fetch(mediaUrl);
+        // Now fetch the video with timeout
+        console.log("Fetching video from blob storage...");
+        const videoResponse = await fetchWithTimeout(
+          mediaUrl,
+          {
+            method: "GET",
+          },
+          60000,
+        ); // 1 minute timeout for video download
+
         if (!videoResponse.ok) {
           console.error("Failed to fetch video from blob URL", {
             status: videoResponse.status,
@@ -305,42 +434,34 @@ export async function POST(request: Request) {
         }
 
         // Get video as array buffer
+        console.log("Converting video to buffer...");
         const videoBuffer = await videoResponse.arrayBuffer();
+        console.log(`Video buffer size: ${videoBuffer.byteLength} bytes`);
 
         if (totalChunkCount === 1) {
-          // Single chunk upload (entire file)
+          // Single chunk upload (entire file) with timeout and retry
           console.log("Using single chunk upload for the entire file");
 
-          const uploadResponse = await fetch(uploadUrl, {
-            method: "PUT",
-            headers: {
-              "Content-Type": contentType,
-              "Content-Range": `bytes 0-${videoSize - 1}/${videoSize}`,
-              "Content-Length": videoSize.toString(),
-            },
-            body: new Uint8Array(videoBuffer),
-          });
-
-          if (!uploadResponse.ok) {
-            let uploadError;
-            try {
-              uploadError = await uploadResponse.text();
-            } catch {
-              uploadError = "Could not read error response";
-            }
-
-            console.error("Failed to upload video to TikTok:", {
-              status: uploadResponse.status,
-              statusText: uploadResponse.statusText,
-              errorText: uploadError,
-              contentRange: `bytes 0-${videoSize - 1}/${videoSize}`,
-              contentType: contentType,
-            });
-
+          try {
+            await uploadChunkWithRetry(
+              uploadUrl,
+              new Uint8Array(videoBuffer),
+              0,
+              videoSize - 1,
+              videoSize,
+              contentType,
+              0,
+              1,
+            );
+          } catch (error) {
+            console.error("Failed to upload single chunk to TikTok:", error);
             return NextResponse.json(
               {
                 error: "Failed to upload video to TikTok",
-                details: `Upload failed with status ${uploadResponse.status}: ${uploadResponse.statusText}`,
+                details:
+                  error instanceof Error
+                    ? error.message
+                    : "Unknown upload error",
               },
               { status: 500 },
             );
@@ -351,73 +472,47 @@ export async function POST(request: Request) {
             `Using multi-chunk upload with ${totalChunkCount} chunks`,
           );
 
-          for (let i = 0; i < totalChunkCount; i++) {
-            const start = i * chunkSize;
-            // Calculate the end byte position for this chunk
-            // The last chunk might be larger to accommodate remaining bytes
-            let end;
+          try {
+            for (let i = 0; i < totalChunkCount; i++) {
+              const start = i * chunkSize;
+              // Calculate the end byte position for this chunk
+              // The last chunk might be larger to accommodate remaining bytes
+              let end;
 
-            if (i === totalChunkCount - 1) {
-              // Last chunk - use the actual end of the file
-              end = videoSize - 1;
-            } else {
-              // Regular chunk - use standard chunk size
-              end = start + chunkSize - 1;
-            }
-
-            const chunkLength = end - start + 1;
-
-            console.log(
-              `Uploading chunk ${
-                i + 1
-              }/${totalChunkCount}: bytes ${start}-${end}/${videoSize} (${(
-                chunkLength /
-                (1024 * 1024)
-              ).toFixed(2)} MB)`,
-            );
-
-            const chunk = new Uint8Array(videoBuffer.slice(start, end + 1));
-
-            const uploadResponse = await fetch(uploadUrl, {
-              method: "PUT",
-              headers: {
-                "Content-Type": contentType,
-                "Content-Range": `bytes ${start}-${end}/${videoSize}`,
-                "Content-Length": chunkLength.toString(),
-              },
-              body: chunk,
-            });
-
-            if (!uploadResponse.ok) {
-              let uploadError;
-              try {
-                uploadError = await uploadResponse.text();
-              } catch {
-                uploadError = "Could not read error response";
+              if (i === totalChunkCount - 1) {
+                // Last chunk - use the actual end of the file
+                end = videoSize - 1;
+              } else {
+                // Regular chunk - use standard chunk size
+                end = start + chunkSize - 1;
               }
 
-              console.error(
-                `Failed to upload chunk ${i + 1}/${totalChunkCount} to TikTok:`,
-                {
-                  status: uploadResponse.status,
-                  statusText: uploadResponse.statusText,
-                  errorText: uploadError,
-                },
-              );
+              const chunk = new Uint8Array(videoBuffer.slice(start, end + 1));
 
-              return NextResponse.json(
-                {
-                  error: "Failed to upload video chunk to TikTok",
-                  details: `Chunk ${i + 1} upload failed with status ${
-                    uploadResponse.status
-                  }: ${uploadResponse.statusText}`,
-                },
-                { status: 500 },
+              await uploadChunkWithRetry(
+                uploadUrl,
+                chunk,
+                start,
+                end,
+                videoSize,
+                contentType,
+                i,
+                totalChunkCount,
               );
             }
 
-            console.log(
-              `Chunk ${i + 1}/${totalChunkCount} uploaded successfully`,
+            console.log("✓ All chunks uploaded successfully");
+          } catch (error) {
+            console.error("Multi-chunk upload failed:", error);
+            return NextResponse.json(
+              {
+                error: "Failed to upload video chunks to TikTok",
+                details:
+                  error instanceof Error
+                    ? error.message
+                    : "Unknown upload error",
+              },
+              { status: 500 },
             );
           }
         }
